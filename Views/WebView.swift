@@ -22,8 +22,8 @@ class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
         delegate?.userContentController(userContentController, didReceive: message)
     }
 }
-// ----------------------
 
+// --- WEBVIEW IMPLEMENTATION ---
 struct WebView: UIViewRepresentable {
     let url: URL
 
@@ -62,6 +62,13 @@ struct WebView: UIViewRepresentable {
             super.init()
         }
         
+        // MARK: - WKDownloadDelegate (FIXES ERROR)
+        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
+            let tempDir = FileManager.default.temporaryDirectory
+            let destinationURL = tempDir.appendingPathComponent(suggestedFilename)
+            completionHandler(destinationURL)
+        }
+        
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.scrollView.subviews.compactMap { $0 as? UIRefreshControl }.forEach { $0.endRefreshing() }
             PluginManager.shared.webViewDidFinishLoad(url: webView.url ?? parent.url)
@@ -75,30 +82,47 @@ struct WebView: UIViewRepresentable {
             sender.superview?.subviews.compactMap { $0 as? WKWebView }.first?.reload()
         }
 
-        // File/Photo Picker Logic
+        // MARK: - File/Photo Picker
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
             self.filePickerCompletionHandler = completionHandler
             let alert = UIAlertController(title: "Upload", message: nil, preferredStyle: .actionSheet)
+            
             alert.addAction(UIAlertAction(title: "Photo Library", style: .default) { _ in
                 var config = PHPickerConfiguration()
-                config.selectionLimit = 1
+                config.selectionLimit = parameters.allowsMultipleSelection ? 0 : 1
                 let picker = PHPickerViewController(configuration: config)
                 picker.delegate = self
                 self.getTopVC()?.present(picker, animated: true)
             })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in 
+                completionHandler(nil) 
+            })
+            
             getTopVC()?.present(alert, animated: true)
         }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
-            results.first?.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, _ in
+            guard let provider = results.first?.itemProvider else {
+                self.filePickerCompletionHandler?(nil)
+                return
+            }
+            
+            provider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, _ in
                 self.filePickerCompletionHandler?(url != nil ? [url!] : nil)
             }
         }
 
         private func getTopVC() -> UIViewController? {
-            UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.windows.first { $0.isKeyWindow }?.rootViewController }.first
+            let scenes = UIApplication.shared.connectedScenes
+            let windowScene = scenes.first as? UIWindowScene
+            let window = windowScene?.windows.first(where: { $0.isKeyWindow })
+            var topController = window?.rootViewController
+            while let presented = topController?.presentedViewController {
+                topController = presented
+            }
+            return topController
         }
     }
 }
