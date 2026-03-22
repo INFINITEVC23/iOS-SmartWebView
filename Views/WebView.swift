@@ -3,18 +3,6 @@ import WebKit
 import PhotosUI
 import UniformTypeIdentifiers
 
-// --- BRIDGE HELPERS ---
-class PluginManager {
-    static let shared = PluginManager()
-    func initializePlugins(context: SWVContext, webView: WKWebView) {}
-    func handleScriptMessage(message: WKScriptMessage) { print("JS: \(message.name)") }
-    func webViewDidFinishLoad(url: URL) {}
-}
-
-class URLHandler {
-    static func handle(url: URL, webView: WKWebView) -> Bool { return false }
-}
-
 class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
     weak var delegate: WKScriptMessageHandler?
     init(delegate: WKScriptMessageHandler) { self.delegate = delegate }
