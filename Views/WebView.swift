@@ -3,7 +3,6 @@ import WebKit
 import PhotosUI
 import UniformTypeIdentifiers
 
-// This class will hold our single WKWebView instance.
 class WebViewStore: ObservableObject {
     let webView: WKWebView
 
@@ -60,8 +59,6 @@ struct WebView: UIViewRepresentable {
             if swvContext.enabledPlugins.contains("Location") { userContentController.add(self, name: "location") }
         }
         
-        // --- NEW: CLEAN OVERLAY LOGIC ---
-        
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
             popupWebView.uiDelegate = self
@@ -70,7 +67,7 @@ struct WebView: UIViewRepresentable {
             vc.view = popupWebView
             
             let nav = UINavigationController(rootViewController: vc)
-            nav.modalPresentationStyle = .pageSheet // Clean "Card" look
+            nav.modalPresentationStyle = .pageSheet
             
             vc.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Done", style: .plain, target: self, action: #selector(dismissPopup))
             vc.navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(refreshPopup))
@@ -88,7 +85,6 @@ struct WebView: UIViewRepresentable {
         }
 
         @objc func refreshPopup() {
-            // This reloads the popup webview specifically
             if let root = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first(where: \.isKeyWindow)?.rootViewController,
                let nav = root.presentedViewController as? UINavigationController,
                let popupWV = nav.topViewController?.view as? WKWebView {
@@ -96,8 +92,6 @@ struct WebView: UIViewRepresentable {
             }
         }
 
-        // --- EXISTING DELEGATE METHODS (NOT REMOVED) ---
-        
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             if let refreshControl = webView.scrollView.subviews.first(where: { $0 is UIRefreshControl }) as? UIRefreshControl {
                 refreshControl.endRefreshing()
