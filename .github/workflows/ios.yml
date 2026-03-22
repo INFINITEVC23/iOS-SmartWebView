@@ -3,14 +3,10 @@ name: Build iOS
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build:
-    name: Build and Archive
     runs-on: macos-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -20,27 +16,24 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Final Blueprint Cleanup
+      - name: Kill Hidden Dependencies
         run: |
-          # This ensures that even if a 'Ghost' reference remains in the hidden project file, 
-          # the build won't stop to look for it.
-          PBX_FILE=$(find . -name "project.pbxproj")
-          sed -i '' '/GoogleService-Info.plist/d' "$PBX_FILE"
-          sed -i '' '/Firebase/d' "$PBX_FILE"
-          sed -i '' '/GoogleUtilities/d' "$PBX_FILE"
+          # This deletes the cached 'Shopping List' of Google libraries
+          rm -rf iOS-SmartWebView.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
           
-          # Delete the Package.resolved to force a clean dependency state
-          find . -name "Package.resolved" -delete
+          # This scrubs any remaining mentions in the project file
+          PBX=$(find . -name "project.pbxproj")
+          sed -i '' '/GoogleService/d' "$PBX"
+          sed -i '' '/Firebase/d' "$PBX"
           
-          echo "Blueprint sanitized for a clean build."
+          echo "Dependencies reset."
 
       - name: Build Archive
         run: |
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
           
-          # We use GENERATE_INFOPLIST_FILE=YES to avoid any manual Info.plist conflicts
-          # and COMPILER_INDEX_STORE_ENABLE=NO to speed up the GitHub runner.
+          # Use 'resolved' flag to tell Xcode NOT to look for external packages
           xcodebuild archive \
             -project "$PROJ_PATH" \
             -scheme "$SCHEME_NAME" \
@@ -48,8 +41,7 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -destination 'generic/platform=iOS' \
+            -resolvePackageDependencies \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            ENTITLEMENTS_REQUIRED=NO \
-            GENERATE_INFOPLIST_FILE=YES \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            GENERATE_INFOPLIST_FILE=YES
