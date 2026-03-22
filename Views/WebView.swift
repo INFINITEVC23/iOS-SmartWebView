@@ -8,7 +8,6 @@ class WebViewStore: ObservableObject {
 
     init() {
         let configuration = WKWebViewConfiguration()
-        // Ensure JavaScript is enabled and the bridge is ready
         let preferences = WKWebpagePreferences()
         preferences.allowsContentJavaScript = true
         configuration.defaultWebpagePreferences = preferences
@@ -31,12 +30,10 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // Initialize custom logic
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
         
         if SWVContext.shared.pullToRefreshEnabled {
             let refreshControl = UIRefreshControl()
-            // Corrected target to use the coordinator instance
             refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh(_:)), for: .valueChanged)
             webView.scrollView.refreshControl = refreshControl
             webView.scrollView.bounces = true
@@ -64,7 +61,6 @@ struct WebView: UIViewRepresentable {
             let swvContext = SWVContext.shared
             let userContentController = self.webView.configuration.userContentController
             
-            // Clean up existing handlers to avoid crashes on re-init
             userContentController.removeAllScriptMessageHandlers()
             
             if swvContext.enabledPlugins.contains("Toast") { userContentController.add(self, name: "toast") }
@@ -168,6 +164,7 @@ struct WebView: UIViewRepresentable {
         // MARK: - Selectors & Logic
         @objc func handleRefresh(_ sender: UIRefreshControl) {
             webView.reload()
+            sender.endRefreshing() // Added to ensure the spinner stops
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -194,8 +191,8 @@ struct WebView: UIViewRepresentable {
             picker.mediaTypes = [UTType.image.identifier, UTType.movie.identifier]
             self.present(picker)
         }
-    }
-}
+    } // End of Coordinator class
+} // End of WebView struct
 
 // MARK: - Downloads
 extension WebView.Coordinator: WKDownloadDelegate {
