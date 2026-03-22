@@ -23,11 +23,22 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
+        // --- FIX: VIEWPORT INJECTION (Solves the "Way too scaled" bug) ---
+        // This forces the web content to respect the mobile screen width and scaling
+        let viewportSource = """
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+        """
+        let script = WKUserScript(source: viewportSource, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        config.userContentController.addUserScript(script)
+        
         // 1. Enable the JavaScript Bridge
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
         config.userContentController.add(leakFreeHandler, name: "nativeApp")
         
-        // --- FIX: Media Playback (Prevents full-screen jumps for surveys) ---
+        // --- FIX: Media Playback ---
         config.allowsInlineMediaPlayback = true
         
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -36,11 +47,11 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // --- FIX: FULL SCREEN LAYOUT ---
-        // This ensures the survey fills the screen behind the notch and home bar
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // --- FIX: FULL SCREEN & SCALING BEHAVIOR ---
+        webView.scrollView.contentInsetAdjustmentBehavior = .never // Stops the "jumpy" layout
+        webView.scrollView.bounces = false // Feels more like a native app
         webView.isOpaque = false
-        webView.backgroundColor = .clear // Prevents white flashes during loading
+        webView.backgroundColor = .black // Matches your BloxTime theme
         
         // 3. Initialize Plugins
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
@@ -62,18 +73,19 @@ struct WebView: UIViewRepresentable {
         
         var parent: WebView
         private var filePickerCompletionHandler: (([URL]?) -> Void)?
+        weak var webViewInstance: WKWebView? // Track the webview for reload logic
 
         init(_ parent: WebView) {
             self.parent = parent
             super.init()
             
-            // Allow external refresh calls (useful for your custom title bar)
+            // Listen for reload requests from your custom title bar
             NotificationCenter.default.addObserver(self, selector: #selector(triggerReload), name: NSNotification.Name("ReloadWebView"), object: nil)
         }
         
         @objc func triggerReload() {
-            // Find the webview and reload it via a notification
-            // This is how you'll link your custom "Refresh" button
+            // This allows your custom Refresh button to work
+            webViewInstance?.reload()
         }
         
         // MARK: - WKDownloadDelegate
@@ -86,6 +98,7 @@ struct WebView: UIViewRepresentable {
         
         // MARK: - Navigation & Script Handling
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            self.webViewInstance = webView // Capture the instance
             webView.scrollView.refreshControl?.endRefreshing()
             PluginManager.shared.webViewDidFinishLoad(url: webView.url ?? parent.url)
         }
@@ -95,10 +108,10 @@ struct WebView: UIViewRepresentable {
         }
         
         @objc func handleRefresh(sender: UIRefreshControl) {
-            sender.superview?.subviews.compactMap { $0 as? WKWebView }.first?.reload()
+            webViewInstance?.reload()
         }
 
-        // MARK: - File/Photo Picker (Fixed for iOS 16+)
+        // MARK: - File/Photo Picker
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
             self.filePickerCompletionHandler = completionHandler
             let alert = UIAlertController(title: "Upload File", message: nil, preferredStyle: .actionSheet)
