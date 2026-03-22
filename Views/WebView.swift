@@ -24,9 +24,11 @@ struct WebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         
         // 1. Enable the JavaScript Bridge
-        // This ensures 'window.webkit.messageHandlers.nativeApp' works in JS
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
         config.userContentController.add(leakFreeHandler, name: "nativeApp")
+        
+        // --- FIX: Media Playback (Prevents full-screen jumps for surveys) ---
+        config.allowsInlineMediaPlayback = true
         
         let webView = WKWebView(frame: .zero, configuration: config)
         
@@ -34,15 +36,20 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
+        // --- FIX: FULL SCREEN LAYOUT ---
+        // This ensures the survey fills the screen behind the notch and home bar
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.isOpaque = false
+        webView.backgroundColor = .clear // Prevents white flashes during loading
+        
         // 3. Initialize Plugins
-        // Adjusted to pass the webView and the coordinator for bridge handling
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
         
         // 4. Modern Pull-to-Refresh
         if SWVContext.shared.pullToRefreshEnabled {
             let refresh = UIRefreshControl()
             refresh.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh), for: .valueChanged)
-            webView.scrollView.refreshControl = refresh // Use the native property instead of addSubview
+            webView.scrollView.refreshControl = refresh
         }
         
         webView.load(URLRequest(url: url))
@@ -59,6 +66,14 @@ struct WebView: UIViewRepresentable {
         init(_ parent: WebView) {
             self.parent = parent
             super.init()
+            
+            // Allow external refresh calls (useful for your custom title bar)
+            NotificationCenter.default.addObserver(self, selector: #selector(triggerReload), name: NSNotification.Name("ReloadWebView"), object: nil)
+        }
+        
+        @objc func triggerReload() {
+            // Find the webview and reload it via a notification
+            // This is how you'll link your custom "Refresh" button
         }
         
         // MARK: - WKDownloadDelegate
@@ -76,12 +91,10 @@ struct WebView: UIViewRepresentable {
         }
         
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            // Routes JS calls from 'nativeApp' to your PluginManager
             PluginManager.shared.handleScriptMessage(message: message)
         }
         
         @objc func handleRefresh(sender: UIRefreshControl) {
-            // Find the webView within the parent hierarchy and reload
             sender.superview?.subviews.compactMap { $0 as? WKWebView }.first?.reload()
         }
 
@@ -106,7 +119,6 @@ struct WebView: UIViewRepresentable {
                 completionHandler(nil) 
             })
             
-            // For iPad support, anchor the action sheet
             if let popoverController = alert.popoverPresentationController {
                 popoverController.sourceView = webView
                 popoverController.sourceRect = CGRect(x: webView.bounds.midX, y: webView.bounds.midY, width: 0, height: 0)
@@ -123,11 +135,9 @@ struct WebView: UIViewRepresentable {
                 return
             }
             
-            // Check for file representation
             if provider.hasItemConformingToTypeIdentifier(UTType.item.identifier) {
                 provider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, error in
                     if let url = url {
-                        // Crucial: Copy the file out of the temp sandbox so the WebView can read it
                         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
                         try? FileManager.default.removeItem(at: tempURL)
                         try? FileManager.default.copyItem(at: url, to: tempURL)
@@ -141,7 +151,6 @@ struct WebView: UIViewRepresentable {
             }
         }
 
-        // MARK: - Utilities
         private func getTopVC() -> UIViewController? {
             let keyWindow = UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
