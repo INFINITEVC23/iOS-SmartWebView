@@ -8,7 +8,9 @@ on:
 
 jobs:
   build:
+    name: Build and Archive
     runs-on: macos-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -18,31 +20,27 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Scrub Google and Firebase from Project Blueprint
+      - name: Final Blueprint Cleanup
         run: |
-          # Find the project file
-          PBX_PATH=$(find . -name "project.pbxproj")
+          # This ensures that even if a 'Ghost' reference remains in the hidden project file, 
+          # the build won't stop to look for it.
+          PBX_FILE=$(find . -name "project.pbxproj")
+          sed -i '' '/GoogleService-Info.plist/d' "$PBX_FILE"
+          sed -i '' '/Firebase/d' "$PBX_FILE"
+          sed -i '' '/GoogleUtilities/d' "$PBX_FILE"
           
-          echo "Cleaning $PBX_PATH..."
+          # Delete the Package.resolved to force a clean dependency state
+          find . -name "Package.resolved" -delete
           
-          # Delete the lines that mention these specific ghost files
-          sed -i '' '/GoogleService-Info.plist/d' "$PBX_PATH"
-          sed -i '' '/Firebase/d' "$PBX_PATH"
-          sed -i '' '/GoogleUtilities/d' "$PBX_PATH"
-          sed -i '' '/Protobuf/d' "$PBX_PATH"
-          sed -i '' '/nanopb/d' "$PBX_PATH"
-          sed -i '' '/FBLPromises/d' "$PBX_PATH"
-          
-          # Special: Remove the FirebasePlugin.swift reference which I saw in your file
-          sed -i '' '/FirebasePlugin.swift/d' "$PBX_PATH"
-          
-          echo "Scrubbing complete."
+          echo "Blueprint sanitized for a clean build."
 
       - name: Build Archive
         run: |
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
           
+          # We use GENERATE_INFOPLIST_FILE=YES to avoid any manual Info.plist conflicts
+          # and COMPILER_INDEX_STORE_ENABLE=NO to speed up the GitHub runner.
           xcodebuild archive \
             -project "$PROJ_PATH" \
             -scheme "$SCHEME_NAME" \
@@ -52,4 +50,6 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            GENERATE_INFOPLIST_FILE=YES
+            ENTITLEMENTS_REQUIRED=NO \
+            GENERATE_INFOPLIST_FILE=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO
