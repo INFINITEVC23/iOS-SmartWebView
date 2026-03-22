@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build IPA for Signulous
+    name: Build IPA
     runs-on: macos-latest
 
     steps:
@@ -20,9 +20,28 @@ jobs:
           SCHEME_NAME=$(xcodebuild -list -json | jq -r '.project.schemes[0]')
           echo "SCHEME=$SCHEME_NAME" >> $GITHUB_ENV
 
-      - name: Build Archive (Skip Signing)
+      - name: Create ExportOptions.plist
         run: |
-          # We force Xcode to ignore signing so the runner doesn't crash
+          # This creates the file temporarily on the runner so you don't have to
+          cat <<EOF > ExportOptions.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>compileBitcode</key>
+              <false/>
+              <key>thinning</key>
+              <string>&lt;none&gt;</string>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Build Archive
+        run: |
           xcodebuild archive \
             -scheme "$SCHEME" \
             -sdk iphoneos \
@@ -31,18 +50,18 @@ jobs:
             -destination "generic/platform=iOS" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            CODE_SIGN_IDENTITY=""
 
       - name: Export IPA
         run: |
           mkdir -p $GITHUB_WORKSPACE/build/output
-          # Exporting using the 'development' method usually works best for third-party signers
           xcodebuild -exportArchive \
             -archivePath $GITHUB_WORKSPACE/build/App.xcarchive \
             -exportOptionsPlist ExportOptions.plist \
             -exportPath $GITHUB_WORKSPACE/build/output \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            -allowProvisioningUpdates
             
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
