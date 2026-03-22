@@ -1,25 +1,40 @@
-// Update SWVContext.swift to safely unwrap and verify initial URLs before usage.
-
 import Foundation
+import WebKit
 
 class SWVContext {
-    var initialURLs: [URL]?
+    static let shared = SWVContext()
+    var pullToRefreshEnabled = true
+    var fileUploadsEnabled = true
+    var multipleUploadsEnabled = true
+    var enabledPlugins = ["Toast", "Dialog", "Location", "Playground", "Rating"]
+}
 
-    init(urls: [String]) {
-        // Convert Strings to URLs and safely unwrap
-        self.initialURLs = urls.compactMap { URL(string: $0) }
-        // Validate the URLs
-        self.initialURLs = self.initialURLs?.filter { $0.scheme != nil && $0.host != nil }
-    }
+class PluginManager {
+    static let shared = PluginManager()
+    func initializePlugins(context: SWVContext, webView: WKWebView) {}
+    func handleScriptMessage(message: WKScriptMessage) {}
+    func webViewDidFinishLoad(url: URL) {}
+}
 
-    func useURLs() {
-        guard let urls = initialURLs else {
-            print("No valid URLs available.")
-            return
+class URLHandler {
+    static func handle(url: URL, webView: WKWebView) -> Bool {
+        if ["tel", "mailto", "sms"].contains(url.scheme) {
+            UIApplication.shared.open(url); return true
         }
-        // Proceed to use the urls safely
-        for url in urls {
-            print("Using URL: \(url)")
-        }
+        return false
     }
 }
+
+class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
+    weak var delegate: WKScriptMessageHandler?
+    init(delegate: WKScriptMessageHandler) { self.delegate = delegate }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        delegate?.userContentController(userContentController, didReceive: message)
+    }
+}
+
+// STUBS: These keep your App file from throwing errors until you build these plugins
+class ToastPlugin { static func register() {} }
+class Playground { static func register() {} }
+class DialogPlugin { static func register() {} }
+class RatingPlugin { static func register() {} }
