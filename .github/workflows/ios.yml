@@ -1,16 +1,53 @@
-      - name: Create IPA (The App File)
+
+name: iOS Starter Workflow
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and Package BloxTime
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Default Scheme
         run: |
-          # This finds your project name and scheme based on the logic you already have
-          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
+          scheme_list=$(xcodebuild -list -json | tr -d "\n")
+          default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
+          echo $default | cat >default
+          echo Using default scheme: $default
+
+      - name: Build for IPA
+        run: |
           scheme=$(cat default)
+          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then 
+            filetype_parameter="workspace"
+            file_to_build="`ls -A | grep -i \\.xcworkspace\$`"
+          else 
+            filetype_parameter="project"
+            file_to_build="`ls -A | grep -i \\.xcodeproj\$`"
+          fi
           
-          # This creates the archive and packages it for Sideloadly
-          xcodebuild archive -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -archivePath build/App.xcarchive -sdk iphoneos CODE_SIGNING_ALLOWED=NO
+          # This compiles the real app for your iPhone
+          xcodebuild archive \
+            -scheme "$scheme" \
+            -"$filetype_parameter" "$file_to_build" \
+            -archivePath build/App.xcarchive \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package IPA
+        run: |
           mkdir -p build/Payload
           cp -r build/App.xcarchive/Products/Applications/*.app build/Payload
           cd build && zip -r BloxTime.ipa Payload
 
-      - name: Upload BloxTime to GitHub
+      - name: Upload BloxTime Artifact
         uses: actions/upload-artifact@v4
         with:
           name: BloxTime-Installer
