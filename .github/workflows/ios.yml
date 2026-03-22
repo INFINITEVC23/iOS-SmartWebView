@@ -6,14 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
-    name: Build and Archive
     runs-on: macos-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -23,37 +18,30 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Hard Reset and Clean Project
+      - name: Scrub Google and Firebase from Project Blueprint
         run: |
-          # 1. Find the project file regardless of where it is hidden
-          PROJ_FILE=$(find . -name "project.pbxproj" | head -n 1)
-          echo "Cleaning Project Map: $PROJ_FILE"
-
-          # 2. Remove all references to deleted plugins from the project map
-          sed -i '' '/LocationPlugin/d' "$PROJ_FILE" || true
-          sed -i '' '/DialogPlugin/d' "$PROJ_FILE" || true
-          sed -i '' '/RatingPlugin/d' "$PROJ_FILE" || true
-          sed -i '' '/FirebasePlugin/d' "$PROJ_FILE" || true
+          # Find the project file
+          PBX_PATH=$(find . -name "project.pbxproj")
           
-          # 3. Fix the 'Multiple commands produce Info.plist' conflict
-          sed -i '' '/Info.plist/d' "$PROJ_FILE" || true
-
-          # 4. Remove plugin calls from all Code files (Swift and Headers)
-          # This stops errors like "No such module" or "Unresolved identifier"
-          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/LocationPlugin/d' {} +
-          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/DialogPlugin/d' {} +
-          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/RatingPlugin/d' {} +
-          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/FirebasePlugin/d' {} +
+          echo "Cleaning $PBX_PATH..."
           
-          echo "Cleanup complete. Project is now 'Clean'."
+          # Delete the lines that mention these specific ghost files
+          sed -i '' '/GoogleService-Info.plist/d' "$PBX_PATH"
+          sed -i '' '/Firebase/d' "$PBX_PATH"
+          sed -i '' '/GoogleUtilities/d' "$PBX_PATH"
+          sed -i '' '/Protobuf/d' "$PBX_PATH"
+          sed -i '' '/nanopb/d' "$PBX_PATH"
+          sed -i '' '/FBLPromises/d' "$PBX_PATH"
+          
+          # Special: Remove the FirebasePlugin.swift reference which I saw in your file
+          sed -i '' '/FirebasePlugin.swift/d' "$PBX_PATH"
+          
+          echo "Scrubbing complete."
 
       - name: Build Archive
         run: |
-          # Auto-detect project path and scheme name
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
-          
-          echo "Starting build for: $SCHEME_NAME"
           
           xcodebuild archive \
             -project "$PROJ_PATH" \
@@ -64,6 +52,4 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            ENTITLEMENTS_REQUIRED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO \
             GENERATE_INFOPLIST_FILE=YES
