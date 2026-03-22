@@ -3,6 +3,55 @@ import WebKit
 import PhotosUI
 import UniformTypeIdentifiers
 
+// --- NEW: MODERN SURVEY CONTAINER ---
+// This wraps your WebView to provide the clean title bar you asked for
+struct SurveyView: View {
+    let url: URL
+    @Environment(\.dismiss) var dismiss // For the close button
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // --- MODERN TITLE BAR ---
+            ZStack {
+                Color.black // Matches BloxTime theme
+                
+                HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("Survey")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        // Triggers the reload notification in your Coordinator
+                        NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 10)
+            }
+            .frame(height: 60)
+            
+            // --- THE WEBVIEW ---
+            WebView(url: url)
+                .ignoresSafeArea(edges: .bottom)
+        }
+        .background(Color.black.ignoresSafeArea())
+    }
+}
+
 // --- Memory Management Helper ---
 class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
     weak var delegate: WKScriptMessageHandler?
@@ -23,16 +72,16 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // --- FIX: VIEWPORT INJECTION (Solves the "Way too scaled" bug) ---
-        // This forces the web content to respect the mobile screen width and scaling
-        let viewportSource = """
+        // --- FIX: VIEWPORT INJECTION ---
+        // Forces the site to respect the mobile screen width and fixes scaling
+        let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
         document.getElementsByTagName('head')[0].appendChild(meta);
         """
-        let script = WKUserScript(source: viewportSource, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        config.userContentController.addUserScript(script)
+        let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        config.userContentController.addUserScript(userScript)
         
         // 1. Enable the JavaScript Bridge
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
@@ -47,11 +96,12 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // --- FIX: FULL SCREEN & SCALING BEHAVIOR ---
-        webView.scrollView.contentInsetAdjustmentBehavior = .never // Stops the "jumpy" layout
-        webView.scrollView.bounces = false // Feels more like a native app
+        // --- FIX: LAYOUT & SCALING ---
+        // .always tells the webview to handle the safe area naturally 
+        // while the script forces the 1:1 scale
+        webView.scrollView.contentInsetAdjustmentBehavior = .always 
         webView.isOpaque = false
-        webView.backgroundColor = .black // Matches your BloxTime theme
+        webView.backgroundColor = .black
         
         // 3. Initialize Plugins
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
@@ -73,18 +123,16 @@ struct WebView: UIViewRepresentable {
         
         var parent: WebView
         private var filePickerCompletionHandler: (([URL]?) -> Void)?
-        weak var webViewInstance: WKWebView? // Track the webview for reload logic
+        weak var webViewInstance: WKWebView? 
 
         init(_ parent: WebView) {
             self.parent = parent
             super.init()
-            
-            // Listen for reload requests from your custom title bar
+            // Link for the modern Title Bar Refresh button
             NotificationCenter.default.addObserver(self, selector: #selector(triggerReload), name: NSNotification.Name("ReloadWebView"), object: nil)
         }
         
         @objc func triggerReload() {
-            // This allows your custom Refresh button to work
             webViewInstance?.reload()
         }
         
@@ -98,7 +146,7 @@ struct WebView: UIViewRepresentable {
         
         // MARK: - Navigation & Script Handling
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            self.webViewInstance = webView // Capture the instance
+            self.webViewInstance = webView
             webView.scrollView.refreshControl?.endRefreshing()
             PluginManager.shared.webViewDidFinishLoad(url: webView.url ?? parent.url)
         }
@@ -111,7 +159,7 @@ struct WebView: UIViewRepresentable {
             webViewInstance?.reload()
         }
 
-        // MARK: - File/Photo Picker
+        // MARK: - File/Photo Picker (Fixed for iOS 16+)
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
             self.filePickerCompletionHandler = completionHandler
             let alert = UIAlertController(title: "Upload File", message: nil, preferredStyle: .actionSheet)
