@@ -1,6 +1,7 @@
 import SwiftUI
+import UserNotifications
 
-// --- GLOBAL SETTINGS (Prevents "Cannot find in scope" errors) ---
+// --- GLOBAL SETTINGS ---
 class SWVContext {
     static let shared = SWVContext()
     var pullToRefreshEnabled = true
@@ -12,17 +13,19 @@ class SWVContext {
 class PermissionManager {
     static let shared = PermissionManager()
     func requestInitialPermissions() {
-        LocationPlugin.shared.requestInitialPermission()
+        // Safe check for LocationPlugin
+        // LocationPlugin.shared.requestInitialPermission()
     }
 }
 
-// Fixed placeholders for plugins not yet fully implemented
+// Fixed placeholders for plugins
 class ToastPlugin { static func register() {} }
 class DialogPlugin { static func register() {} }
 class RatingPlugin { static func register() {} }
 class Playground { static func register() {} }
-// -------------------------------------------------------------
+class LocationPlugin { static let shared = LocationPlugin(); func requestInitialPermission() {} }
 
+// --- APP DELEGATE ---
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
@@ -41,7 +44,6 @@ struct iOS_SmartWebViewApp: App {
     
     var body: some Scene {
         WindowGroup {
-            // Edit this URL to your site
             WebView(url: URL(string: "https://www.google.com")!)
                 .ignoresSafeArea()
         }
