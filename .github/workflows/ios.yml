@@ -16,28 +16,34 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.1' # Using a specific stable version
+          xcode-version: '16.1'
 
-      - name: Sanitize Project Environment
+      - name: Terminate All Google Dependencies
         run: |
-          # 1. Delete any lingering workspace or package data
+          # 1. Locate the project file
+          PBX_PATH=$(find . -name "project.pbxproj")
+          
+          # 2. Delete every single line containing Google, Firebase, or Crashlytics
+          # This cleans the specific lines (28, 53, 144, 229) seen in your screenshot
+          sed -i '' '/Google/d' "$PBX_PATH"
+          sed -i '' '/Firebase/d' "$PBX_PATH"
+          sed -i '' '/Crashlytics/d' "$PBX_PATH"
+          
+          # 3. Remove SPM (Swift Package Manager) references that might try to pull Firebase
+          sed -i '' '/remoteSourceControl/d' "$PBX_PATH"
+          
+          # 4. Wipe the workspace and local caches
           rm -rf *.xcodeproj/project.xcworkspace
           rm -rf *.xcodeproj/xcshareddata
-          find . -name "Package.resolved" -delete
           
-          # 2. Check for the Info.plist - If it's missing, create a dummy one 
-          # to prevent the 'File Not Found' crash.
-          if [ ! -f "iOS-SmartWebView-Info.plist" ]; then
-            echo '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict></dict></plist>' > "iOS-SmartWebView-Info.plist"
-          fi
+          echo "Blueprint sanitized. All Google/Firebase ghosts removed."
 
       - name: Build Archive
         run: |
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
           
-          # The -clobber flag and clean action force Xcode to ignore the cache
-          xcodebuild clean archive \
+          xcodebuild archive \
             -project "$PROJ_PATH" \
             -scheme "$SCHEME_NAME" \
             -archivePath build/App.xcarchive \
