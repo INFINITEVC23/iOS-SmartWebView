@@ -24,13 +24,23 @@ jobs:
 
       - name: Remove Ghost Plugins
         run: |
-          # This forces the project file to forget about the 4 missing files
+          # This is a stronger cleanup that removes the files from Compile Sources
           PROJECT_FILE=$(find . -name "project.pbxproj")
+          
+          # Delete the file references AND the build phase entries
           sed -i '' '/LocationPlugin.swift/d' "$PROJECT_FILE" || true
           sed -i '' '/DialogPlugin.swift/d' "$PROJECT_FILE" || true
           sed -i '' '/RatingPlugin.swift/d' "$PROJECT_FILE" || true
           sed -i '' '/FirebasePlugin.swift/d' "$PROJECT_FILE" || true
-          echo "Ghost plugins removed from project map."
+          
+          # Remove specific UUID lines associated with these missing files
+          # This prevents the "Build input files cannot be found" error
+          grep -v "LocationPlugin" "$PROJECT_FILE" > temp && mv temp "$PROJECT_FILE"
+          grep -v "DialogPlugin" "$PROJECT_FILE" > temp && mv temp "$PROJECT_FILE"
+          grep -v "RatingPlugin" "$PROJECT_FILE" > temp && mv temp "$PROJECT_FILE"
+          grep -v "FirebasePlugin" "$PROJECT_FILE" > temp && mv temp "$PROJECT_FILE"
+          
+          echo "Project map successfully purged of missing plugins."
 
       - name: Set Default Scheme
         run: |
