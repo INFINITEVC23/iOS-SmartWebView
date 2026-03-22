@@ -23,32 +23,37 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Surgical Scrub of Missing Plugins
+      - name: Hard Reset and Clean Project
         run: |
-          # 1. Remove from Project Map (pbxproj)
-          find . -name "project.pbxproj" -exec sed -i '' '/LocationPlugin/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/DialogPlugin/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/RatingPlugin/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/FirebasePlugin/d' {} +
+          # 1. Find the project file regardless of where it is hidden
+          PROJ_FILE=$(find . -name "project.pbxproj" | head -n 1)
+          echo "Cleaning Project Map: $PROJ_FILE"
 
-          # 2. Remove from Bridging Headers (.h files)
-          find . -name "*.h" -exec sed -i '' '/LocationPlugin/d' {} +
-          find . -name "*.h" -exec sed -i '' '/DialogPlugin/d' {} +
-          find . -name "*.h" -exec sed -i '' '/RatingPlugin/d' {} +
-          find . -name "*.h" -exec sed -i '' '/FirebasePlugin/d' {} +
-
-          # 3. Remove from Swift files (.swift)
-          find . -name "*.swift" -exec sed -i '' '/LocationPlugin/d' {} +
-          find . -name "*.swift" -exec sed -i '' '/DialogPlugin/d' {} +
-          find . -name "*.swift" -exec sed -i '' '/RatingPlugin/d' {} +
-          find . -name "*.swift" -exec sed -i '' '/FirebasePlugin/d' {} +
+          # 2. Remove all references to deleted plugins from the project map
+          sed -i '' '/LocationPlugin/d' "$PROJ_FILE" || true
+          sed -i '' '/DialogPlugin/d' "$PROJ_FILE" || true
+          sed -i '' '/RatingPlugin/d' "$PROJ_FILE" || true
+          sed -i '' '/FirebasePlugin/d' "$PROJ_FILE" || true
           
-          echo "Cleanup complete. Starting build..."
+          # 3. Fix the 'Multiple commands produce Info.plist' conflict
+          sed -i '' '/Info.plist/d' "$PROJ_FILE" || true
+
+          # 4. Remove plugin calls from all Code files (Swift and Headers)
+          # This stops errors like "No such module" or "Unresolved identifier"
+          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/LocationPlugin/d' {} +
+          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/DialogPlugin/d' {} +
+          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/RatingPlugin/d' {} +
+          find . -type f \( -name "*.swift" -o -name "*.h" -o -name "*.m" \) -exec sed -i '' '/FirebasePlugin/d' {} +
+          
+          echo "Cleanup complete. Project is now 'Clean'."
 
       - name: Build Archive
         run: |
+          # Auto-detect project path and scheme name
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
+          
+          echo "Starting build for: $SCHEME_NAME"
           
           xcodebuild archive \
             -project "$PROJ_PATH" \
@@ -60,4 +65,5 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             ENTITLEMENTS_REQUIRED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            GENERATE_INFOPLIST_FILE=YES
