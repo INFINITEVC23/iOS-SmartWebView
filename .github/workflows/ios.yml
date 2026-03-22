@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: macos-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # This fixes your Node.js warning
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -16,22 +18,25 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Force Delete Google Ghost References
+      - name: Surgical Ghost Removal
         run: |
-          # 1. Find the project blueprint file
+          # Find the project file
           PBX_PATH=$(find . -name "project.pbxproj")
-          echo "Found blueprint at: $PBX_PATH"
           
-          # 2. Delete every line containing GoogleService or Firebase
-          # This cleans lines 28, 53, 144, and 229 from your screenshot
-          sed -i '' '/GoogleService/d' "$PBX_PATH"
+          # 1. Remove the actual file references that cause Exit 74
+          # We use a pattern that matches the specific Xcode ID format
+          sed -i '' '/GoogleService-Info.plist/d' "$PBX_PATH"
           sed -i '' '/Firebase/d' "$PBX_PATH"
           sed -i '' '/GoogleUtilities/d' "$PBX_PATH"
           
-          # 3. Force remove the package cache
-          rm -rf iOS-SmartWebView.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          # 2. Kill the Package references in the project file
+          sed -i '' '/remoteSourceControl/d' "$PBX_PATH"
           
-          echo "Blueprint is officially De-Googled."
+          # 3. Wipe the workspace data (This is often where Exit 74 hides)
+          rm -rf *.xcodeproj/project.xcworkspace
+          rm -rf *.xcodeproj/xcshareddata
+          
+          echo "Surgical cleaning finished."
 
       - name: Build Archive
         run: |
@@ -48,4 +53,5 @@ jobs:
             -usePackageBehavior=none \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            GENERATE_INFOPLIST_FILE=YES
+            GENERATE_INFOPLIST_FILE=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO
