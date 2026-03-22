@@ -5,29 +5,23 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-# Ensure we use the latest Node version to avoid deprecation errors
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     name: Build and Package
-    runs-on: macos-15 # Using macOS 15 for the latest Xcode 16.x support
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.1' # Ensures compatibility with your iOS 18.5 SDK
-
       - name: Set Default Scheme
         run: |
           scheme_list=$(xcodebuild -list -json | tr -d "\n")
           default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
-          echo $default | cat > default_scheme
+          echo $default > default_scheme
           echo "Using scheme: $default"
 
       - name: Build Archive
@@ -35,29 +29,26 @@ jobs:
           SCHEME=$(cat default_scheme)
           PROJECT=$(ls -d *.xcodeproj | head -n 1)
           
-          # We add -allowProvisioningUpdates and skip signing to prevent Error 65
           xcodebuild archive \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -archivePath build/BloxTime.xcarchive \
-            -sdk iphoneos \
             -destination "generic/platform=iOS" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon \
             COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Export to IPA
         run: |
-          # Manually package the .app into a .ipa for Sideloadly
           mkdir -p build/Payload
           cp -r build/BloxTime.xcarchive/Products/Applications/*.app build/Payload
           cd build && zip -vr BloxTime.ipa Payload
           echo "IPA Created successfully."
 
-      - name: Upload BloxTime to GitHub
+      - name: Upload BloxTime Artifact
         uses: actions/upload-artifact@v4
         with:
           name: BloxTime-Installer
           path: build/BloxTime.ipa
-          if-no-files-found: error
