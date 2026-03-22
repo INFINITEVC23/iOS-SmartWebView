@@ -6,6 +6,10 @@
 	<string>BloxTime</string>
 	<key>CFBundleName</key>
 	<string>BloxTime</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>XSAppIconAssets</key>
+	<string>Assets.xcassets/AppIcon.appiconset</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
