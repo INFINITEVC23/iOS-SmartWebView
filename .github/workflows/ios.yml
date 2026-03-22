@@ -29,13 +29,11 @@ jobs:
           <plist version="1.0">
           <dict>
               <key>method</key>
-              <string>development</string>
+              <string>debugging</string>
               <key>signingStyle</key>
               <string>manual</string>
               <key>compileBitcode</key>
               <false/>
-              <key>thinning</key>
-              <string>&lt;none&gt;</string>
           </dict>
           </plist>
           EOF
@@ -55,6 +53,8 @@ jobs:
       - name: Export IPA
         run: |
           mkdir -p $GITHUB_WORKSPACE/build/output
+          
+          # Try formal export, but if it fails (Exit 70), manually package the IPA
           xcodebuild -exportArchive \
             -archivePath $GITHUB_WORKSPACE/build/App.xcarchive \
             -exportOptionsPlist ExportOptions.plist \
@@ -62,7 +62,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            AD_HOC_CODE_SIGNING_ALLOWED=YES || \
+          (
+            echo "Standard export failed due to Team ID requirements. Forcing manual IPA packaging..."
+            mkdir -p $GITHUB_WORKSPACE/build/output/Payload
+            cp -r $GITHUB_WORKSPACE/build/App.xcarchive/Products/Applications/*.app $GITHUB_WORKSPACE/build/output/Payload/
+            cd $GITHUB_WORKSPACE/build/output
+            zip -r iOS-SmartWebView.ipa Payload
+            echo "Manual IPA created successfully."
+          )
             
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
