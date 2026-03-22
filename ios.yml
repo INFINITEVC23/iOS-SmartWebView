@@ -1,0 +1,58 @@
+name: Build iOS
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.1'
+
+      - name: Prepare Plugins and Fix Configurations
+        run: |
+          PBX_PATH=$(find . -name "project.pbxproj")
+
+          # Deployment Target Fix
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 18.5;/IPHONEOS_DEPLOYMENT_TARGET = 18.1;/g' "$PBX_PATH"
+
+          # Create Plugins Directory
+          mkdir -p Plugins
+          echo "import Foundation; public class LocationPlugin { public static func register() {} }" > Plugins/LocationPlugin.swift
+          echo "import Foundation; public class DialogPlugin { public static func register() {} }" > Plugins/DialogPlugin.swift
+          echo "import Foundation; public class RatingPlugin { public static func register() {} }" > Plugins/RatingPlugin.swift
+
+          # Validate Plugins Exist
+          for FILE in LocationPlugin.swift DialogPlugin.swift RatingPlugin.swift; do
+              if [[ ! -f "./Plugins/$FILE" ]]; then
+                  echo "Error: ./Plugins/$FILE is missing"
+                  exit 1
+              fi
+          done
+
+      - name: Build Archive
+        run: |
+          PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
+          SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
+
+          xcodebuild archive \
+            -project "$PROJ_PATH" \
+            -scheme "$SCHEME_NAME" \
+            -archivePath build/App.xcarchive \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            GENERATE_INFOPLIST_FILE=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            IPHONEOS_DEPLOYMENT_TARGET=18.1
