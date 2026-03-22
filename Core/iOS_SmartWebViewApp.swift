@@ -1,7 +1,6 @@
 import SwiftUI
-import UIKit
 
-// --- REQUIRED HELPERS (Keep these here to avoid extra files) ---
+// --- GLOBAL SETTINGS (Prevents "Cannot find in scope" errors) ---
 class SWVContext {
     static let shared = SWVContext()
     var pullToRefreshEnabled = true
@@ -17,12 +16,12 @@ class PermissionManager {
     }
 }
 
-// Fixed placeholders for your other plugins
+// Fixed placeholders for plugins not yet fully implemented
 class ToastPlugin { static func register() {} }
 class DialogPlugin { static func register() {} }
 class RatingPlugin { static func register() {} }
 class Playground { static func register() {} }
-// -----------------------------------------------------------
+// -------------------------------------------------------------
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
@@ -42,6 +41,7 @@ struct iOS_SmartWebViewApp: App {
     
     var body: some Scene {
         WindowGroup {
+            // Edit this URL to your site
             WebView(url: URL(string: "https://www.google.com")!)
                 .ignoresSafeArea()
         }
