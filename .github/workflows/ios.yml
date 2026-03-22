@@ -17,6 +17,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest-stable'
+
       - name: Set Default Scheme
         run: |
           scheme_list=$(xcodebuild -list -json | tr -d "\n")
@@ -29,23 +34,24 @@ jobs:
           SCHEME=$(cat default_scheme)
           PROJECT=$(ls -d *.xcodeproj | head -n 1)
           
+          # Added -skipPackagePluginValidation to stop it from hanging
           xcodebuild archive \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -archivePath build/BloxTime.xcarchive \
             -destination "generic/platform=iOS" \
+            -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon \
             COMPILER_INDEX_STORE_ENABLE=NO
 
-      - name: Export to IPA
+      - name: Package IPA
         run: |
           mkdir -p build/Payload
           cp -r build/BloxTime.xcarchive/Products/Applications/*.app build/Payload
           cd build && zip -vr BloxTime.ipa Payload
-          echo "IPA Created successfully."
 
       - name: Upload BloxTime Artifact
         uses: actions/upload-artifact@v4
