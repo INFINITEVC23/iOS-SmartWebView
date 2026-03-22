@@ -24,6 +24,5 @@ struct iOS_SmartWebViewApp: App {
         if context.enabledPlugins.contains("Dialog") { DialogPlugin.register() }
         if context.enabledPlugins.contains("Location") { LocationPlugin.register() }
         if context.enabledPlugins.contains("Rating") { RatingPlugin.register() }
-        if context.enabledPlugins.contains("Firebase"){ FirebasePlugin.register() }
     }
 }
