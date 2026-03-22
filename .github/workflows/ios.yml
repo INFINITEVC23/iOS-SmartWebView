@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 env:
+  # Force Node 24 to avoid deprecation warnings
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -34,27 +35,32 @@ jobs:
           SCHEME=$(cat default_scheme)
           PROJECT=$(ls -d *.xcodeproj | head -n 1)
           
-          # Added -skipPackagePluginValidation to stop it from hanging
+          # We force IPHONEOS_DEPLOYMENT_TARGET=15.0 to satisfy Firebase 12 requirements
           xcodebuild archive \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -archivePath build/BloxTime.xcarchive \
             -destination "generic/platform=iOS" \
             -skipPackagePluginValidation \
+            -allowProvisioningUpdates \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             COMPILER_INDEX_STORE_ENABLE=NO
 
-      - name: Package IPA
+      - name: Export to IPA
         run: |
+          # Manually package the .app into a .ipa
           mkdir -p build/Payload
           cp -r build/BloxTime.xcarchive/Products/Applications/*.app build/Payload
           cd build && zip -vr BloxTime.ipa Payload
+          echo "IPA Created successfully."
 
       - name: Upload BloxTime Artifact
         uses: actions/upload-artifact@v4
         with:
           name: BloxTime-Installer
           path: build/BloxTime.ipa
+          if-no-files-found: error
