@@ -14,13 +14,6 @@ class URLHandler {
             }
             return true
         }
-        
-        if url.scheme == "fcm" {
-            if let firebasePlugin = PluginManager.shared.getPlugin(named: "Firebase") as? FirebasePlugin {
-                firebasePlugin.showTestNotification()
-            }
-            return true
-        }
 
         if urlString.starts(with: "share:") {
             let textToShare = urlString.replacingOccurrences(of: "share:", with: "")
