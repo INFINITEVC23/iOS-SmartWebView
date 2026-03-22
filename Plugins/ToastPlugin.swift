@@ -30,19 +30,10 @@ class ToastPlugin: PluginInterface {
                         }
                     }
                 };
-                console.log('Toast JavaScript interface injected.');
             }
         """
-        
         DispatchQueue.main.async {
-            // First, inject the Toast object.
-            self.webView?.evaluateJavaScript(script) { _, error in
-                if let error = error {
-                    print("Error injecting Toast JS: \(error.localizedDescription)")
-                    return
-                }
-                
-                // Now that the injection is complete, run the test if in debug mode.
+            self.webView?.evaluateJavaScript(script) { _, _ in
                 if SWVContext.shared.debugMode {
                     let testScript = "setTimeout(() => window.Toast.show('Hello from iOS! (Debug)'), 2000);"
                     self.webView?.evaluateJavaScript(testScript, completionHandler: nil)
@@ -55,61 +46,38 @@ class ToastPlugin: PluginInterface {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = windowScene.windows.first(where: { $0.isKeyWindow }) else { return }
         
-        let toastLabel = UILabel()
-        toastLabel.text = message
-        toastLabel.backgroundColor = UIColor.black.withAlphaComponent(0.8) // Slightly more solid
-        toastLabel.textColor = UIColor.white
-        toastLabel.textAlignment = .center
-        toastLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium) // A bit bolder
-        toastLabel.alpha = 0.0
-        toastLabel.layer.cornerRadius = 18 // More rounded for a "pill" shape
-        toastLabel.clipsToBounds = true
-        
-        // Add padding inside the label
-        toastLabel.numberOfLines = 0 // Allow multiple lines
-        let horizontalPadding: CGFloat = 20.0
-        let verticalPadding: CGFloat = 10.0
-        
-        window.addSubview(toastLabel)
-        
-        toastLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            toastLabel.centerXAnchor.constraint(equalTo: window.centerXAnchor),
-            toastLabel.bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -60), // A bit higher
-            toastLabel.widthAnchor.constraint(lessThanOrEqualTo: window.widthAnchor, constant: -40),
-        ])
-        
-        // Create an "inset" version of the label for padding
         let toastContainer = UIView()
-        toastContainer.backgroundColor = .clear
+        let toastLabel = UILabel()
+        
+        toastLabel.text = message
+        toastLabel.textColor = .white
+        toastLabel.textAlignment = .center
+        toastLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        toastLabel.numberOfLines = 0
+        
+        toastContainer.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        toastContainer.layer.cornerRadius = 18
+        toastContainer.clipsToBounds = true
+        toastContainer.alpha = 0.0
+        
         toastContainer.addSubview(toastLabel)
         window.addSubview(toastContainer)
-
+        
         toastContainer.translatesAutoresizingMaskIntoConstraints = false
         toastLabel.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
-            // Pin toastLabel to its container with padding
-            toastLabel.topAnchor.constraint(equalTo: toastContainer.topAnchor, constant: verticalPadding),
-            toastLabel.bottomAnchor.constraint(equalTo: toastContainer.bottomAnchor, constant: -verticalPadding),
-            toastLabel.leadingAnchor.constraint(equalTo: toastContainer.leadingAnchor, constant: horizontalPadding),
-            toastLabel.trailingAnchor.constraint(equalTo: toastContainer.trailingAnchor, constant: -horizontalPadding),
-
-            // Position the container on the screen
+            toastLabel.topAnchor.constraint(equalTo: toastContainer.topAnchor, constant: 10),
+            toastLabel.bottomAnchor.constraint(equalTo: toastContainer.bottomAnchor, constant: -10),
+            toastLabel.leadingAnchor.constraint(equalTo: toastContainer.leadingAnchor, constant: 20),
+            toastLabel.trailingAnchor.constraint(equalTo: toastContainer.trailingAnchor, constant: -20),
             toastContainer.centerXAnchor.constraint(equalTo: window.centerXAnchor),
             toastContainer.bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -60),
             toastContainer.widthAnchor.constraint(lessThanOrEqualTo: window.widthAnchor, constant: -40),
         ])
 
-        // We now animate the container, not the label directly
-        toastContainer.layer.cornerRadius = (toastLabel.font.pointSize + verticalPadding * 2) / 2
-        toastContainer.layer.masksToBounds = true
-        toastContainer.backgroundColor = UIColor.black.withAlphaComponent(0.8)
-        toastContainer.alpha = 0.0
-        
         UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.7, initialSpringVelocity: 0.5, options: .curveEaseOut, animations: {
             toastContainer.alpha = 1.0
-            toastContainer.transform = .identity
         }) { _ in
             UIView.animate(withDuration: 0.5, delay: 2.5, animations: { toastContainer.alpha = 0.0 }) { _ in
                 toastContainer.removeFromSuperview()
