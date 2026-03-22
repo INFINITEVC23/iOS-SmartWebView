@@ -138,7 +138,6 @@
 		8F0C92712E2838200043A6D9 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				8F7E7BE42E341412002848D5 /* GoogleService-Info.plist */,
 				8F7E7BD22E340264002848D5 /* web */,
 				8F0C927F2E283A1B0043A6D9 /* swv.properties */,
 			);
