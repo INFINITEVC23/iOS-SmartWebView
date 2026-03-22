@@ -23,29 +23,32 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Global Search and Destroy Ghost Plugins
+      - name: Surgical Scrub of Missing Plugins
         run: |
-          # This finds EVERY pbxproj file in the repo and cleans it
-          find . -name "project.pbxproj" -exec sed -i '' '/LocationPlugin.swift/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/DialogPlugin.swift/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/RatingPlugin.swift/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/FirebasePlugin.swift/d' {} +
+          # 1. Remove from Project Map (pbxproj)
+          find . -name "project.pbxproj" -exec sed -i '' '/LocationPlugin/d' {} +
+          find . -name "project.pbxproj" -exec sed -i '' '/DialogPlugin/d' {} +
+          find . -name "project.pbxproj" -exec sed -i '' '/RatingPlugin/d' {} +
+          find . -name "project.pbxproj" -exec sed -i '' '/FirebasePlugin/d' {} +
+
+          # 2. Remove from Bridging Headers (.h files)
+          find . -name "*.h" -exec sed -i '' '/LocationPlugin/d' {} +
+          find . -name "*.h" -exec sed -i '' '/DialogPlugin/d' {} +
+          find . -name "*.h" -exec sed -i '' '/RatingPlugin/d' {} +
+          find . -name "*.h" -exec sed -i '' '/FirebasePlugin/d' {} +
+
+          # 3. Remove from Swift files (.swift)
+          find . -name "*.swift" -exec sed -i '' '/LocationPlugin/d' {} +
+          find . -name "*.swift" -exec sed -i '' '/DialogPlugin/d' {} +
+          find . -name "*.swift" -exec sed -i '' '/RatingPlugin/d' {} +
+          find . -name "*.swift" -exec sed -i '' '/FirebasePlugin/d' {} +
           
-          # Force remove any line containing these plugin names
-          for f in $(find . -name "project.pbxproj"); do
-            grep -vE "LocationPlugin|DialogPlugin|RatingPlugin|FirebasePlugin" "$f" > temp && mv temp "$f"
-          done
-          echo "Deep clean complete."
+          echo "Cleanup complete. Starting build..."
 
       - name: Build Archive
         run: |
-          # Find the first .xcodeproj available anywhere
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
-          PROJ_BASE=$(basename "$PROJ_PATH")
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
-          
-          echo "Found Project at: $PROJ_PATH"
-          echo "Building Scheme: $SCHEME_NAME"
           
           xcodebuild archive \
             -project "$PROJ_PATH" \
