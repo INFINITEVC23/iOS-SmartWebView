@@ -3,10 +3,14 @@ name: Build iOS
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
+    name: Build and Archive
     runs-on: macos-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -16,24 +20,37 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Kill Hidden Dependencies
+      - name: Deep Clean Google Ghosts
         run: |
-          # This deletes the cached 'Shopping List' of Google libraries
+          # 1. Find the hidden project map
+          PBX_FILE=$(find . -name "project.pbxproj")
+          echo "Cleaning: $PBX_FILE"
+          
+          # 2. Delete every single line mentioning Google or Firebase
+          # This fixes the 'File Not Found' errors for the .plist
+          sed -i '' '/GoogleService/d' "$PBX_FILE"
+          sed -i '' '/Firebase/d' "$PBX_FILE"
+          sed -i '' '/GoogleUtilities/d' "$PBX_FILE"
+          sed -i '' '/Protobuf/d' "$PBX_FILE"
+          sed -i '' '/nanopb/d' "$PBX_FILE"
+          sed -i '' '/FBLPromises/d' "$PBX_FILE"
+          
+          # 3. Force delete the Package.resolved (The 'Army' of libraries)
+          find . -name "Package.resolved" -delete
           rm -rf iOS-SmartWebView.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
           
-          # This scrubs any remaining mentions in the project file
-          PBX=$(find . -name "project.pbxproj")
-          sed -i '' '/GoogleService/d' "$PBX"
-          sed -i '' '/Firebase/d' "$PBX"
+          # 4. Remove FIR references from code just in case
+          find . -type f \( -name "*.swift" -o -name "*.h" \) -exec sed -i '' '/FIR/d' {} +
           
-          echo "Dependencies reset."
+          echo "Cleanup complete."
 
       - name: Build Archive
         run: |
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
           
-          # Use 'resolved' flag to tell Xcode NOT to look for external packages
+          # -usePackageBehavior=none stops Xcode from trying to download Firebase
+          # GENERATE_INFOPLIST_FILE=YES fixes the 4-second Info.plist crash
           xcodebuild archive \
             -project "$PROJ_PATH" \
             -scheme "$SCHEME_NAME" \
@@ -41,7 +58,9 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -resolvePackageDependencies \
+            -usePackageBehavior=none \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            GENERATE_INFOPLIST_FILE=YES
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            GENERATE_INFOPLIST_FILE=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO
