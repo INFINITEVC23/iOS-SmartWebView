@@ -1,73 +1,28 @@
-name: Build iOS
+name: iOS build
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
+    name: Build and Test default scheme using iPhone simulator
     runs-on: macos-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.1'
-
-      - name: Radical Project Sanitization
+      - name: Set Default Scheme
         run: |
-          # 1. Locate the Project File
-          PBX_PATH=$(find . -name "project.pbxproj")
-          
-          # 2. Remove Google/Firebase/Ads references
-          sed -i '' '/Google/d' "$PBX_PATH"
-          sed -i '' '/Firebase/d' "$PBX_PATH"
-          sed -i '' '/AdMob/d' "$PBX_PATH"
-          sed -i '' '/remoteSourceControl/d' "$PBX_PATH"
-          
-          # 3. Create Valid Dummy Plugins (Fixed logic to prevent "not found in scope")
-          mkdir -p Plugins
-          
-          echo "import Foundation; public class LocationPlugin { public static func register() {} }" > Plugins/LocationPlugin.swift
-          echo "import Foundation; public class DialogPlugin { public static func register() {} }" > Plugins/DialogPlugin.swift
-          echo "import Foundation; public class RatingPlugin { public static func register() {} }" > Plugins/RatingPlugin.swift
-          
-          # 4. Fix WKOpenPanelParameters error (This is macOS only, usually)
-          # We wrap the offending function in an #if os(macOS) check
-          find . -name "WebView.swift" -exec sed -i '' 's/func webView(_ webView: WKWebView, runOpenPanelWith/#if os(macOS)\n        func webView(_ webView: WKWebView, runOpenPanelWith/g' {} +
-          # Note: This might need manual closing of the #endif if the file structure is complex, 
-          # but usually, this bypasses the immediate compiler error.
+          # This automatically finds your project scheme so you don't have to guess the name
+          SCHEME_NAME=$(xcodebuild -list -json | jq -r '.project.schemes[0]')
+          echo "SCHEME=$SCHEME_NAME" >> $GITHUB_ENV
 
-          # 5. Comment out Firebase/Google imports
-          find . -name "*.swift" -exec sed -i '' 's/import Firebase/\/\/ import Firebase/g' {} +
-          find . -name "*.swift" -exec sed -i '' 's/import Google/\/\/ import Google/g' {} +
-          find . -name "*.swift" -exec sed -i '' 's/FirebaseApp.configure()/\/\/ FirebaseApp.configure()/g' {} +
-
-          # 6. Ensure Info.plist exists
-          if [ ! -f "iOS-SmartWebView-Info.plist" ]; then
-            echo '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.yourcompany.app</string></dict></plist>' > "iOS-SmartWebView-Info.plist"
-          fi
-
-      - name: Build Archive
+      - name: Build
         run: |
-          PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
-          SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
-          
-          xcodebuild archive \
-            -project "$PROJ_PATH" \
-            -scheme "$SCHEME_NAME" \
-            -archivePath build/App.xcarchive \
-            -sdk iphoneos \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -disableAutomaticPackageResolution \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            GENERATE_INFOPLIST_FILE=YES \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            IPHONEOS_DEPLOYMENT_TARGET=15.0
+          xcodebuild build-for-testing \
+            -scheme "$SCHEME" \
+            -destination "platform=iOS Simulator,name=iPhone 15,OS=latest"
