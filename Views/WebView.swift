@@ -7,8 +7,12 @@ class WebViewStore: ObservableObject {
     @Published var webView: WKWebView
 
     init() {
-        // Initialize with a default configuration to avoid re-init cycles
         let configuration = WKWebViewConfiguration()
+        // Ensure JavaScript is enabled and the bridge is ready
+        let preferences = WKWebpagePreferences()
+        preferences.allowsContentJavaScript = true
+        configuration.defaultWebpagePreferences = preferences
+        
         self.webView = WKWebView(frame: .zero, configuration: configuration)
     }
 }
@@ -24,18 +28,17 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let webView = webViewStore.webView
         
-        // Essential: Set delegates before loading
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
         // Initialize custom logic
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
         
-        // Pull to Refresh logic
         if SWVContext.shared.pullToRefreshEnabled {
             let refreshControl = UIRefreshControl()
-            refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh), for: .valueChanged)
-            webView.scrollView.refreshControl = refreshControl // Modern way to set refreshControl
+            // Corrected target to use the coordinator instance
+            refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh(_:)), for: .valueChanged)
+            webView.scrollView.refreshControl = refreshControl
             webView.scrollView.bounces = true
         }
         
@@ -48,6 +51,7 @@ struct WebView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
     
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKUIDelegate, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIDocumentPickerDelegate {
+        
         var parent: WebView
         var webView: WKWebView 
         private var filePickerCompletionHandler: (([URL]?) -> Void)?
@@ -60,35 +64,20 @@ struct WebView: UIViewRepresentable {
             let swvContext = SWVContext.shared
             let userContentController = self.webView.configuration.userContentController
             
-            // Register JS handlers
+            // Clean up existing handlers to avoid crashes on re-init
+            userContentController.removeAllScriptMessageHandlers()
+            
             if swvContext.enabledPlugins.contains("Toast") { userContentController.add(self, name: "toast") }
             if swvContext.enabledPlugins.contains("Dialog") { userContentController.add(self, name: "dialog") }
             if swvContext.enabledPlugins.contains("Location") { userContentController.add(self, name: "location") }
         }
         
-        // MARK: - WKUIDelegate (Popups & File Panels)
-        
+        // MARK: - WKUIDelegate
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            // Handle target="_blank" links
-            let popupWebView = WKWebView(frame: .zero, configuration: configuration)
-            popupWebView.uiDelegate = self
-            
-            let vc = UIViewController()
-            vc.view = popupWebView
-            
-            let nav = UINavigationController(rootViewController: vc)
-            vc.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Done", style: .done, target: self, action: #selector(dismissPopup))
-            
-            if let root = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first(where: \.isKeyWindow)?.rootViewController {
-                root.present(nav, animated: true)
+            if navigationAction.targetFrame == nil {
+                webView.load(navigationAction.request)
             }
-            return popupWebView
-        }
-
-        @objc func dismissPopup() {
-            if let root = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first(where: \.isKeyWindow)?.rootViewController {
-                root.dismiss(animated: true)
-            }
+            return nil
         }
 
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
@@ -100,12 +89,10 @@ struct WebView: UIViewRepresentable {
             
             let alert = UIAlertController(title: "Upload Files", message: nil, preferredStyle: .actionSheet)
             
-            // 1. Camera
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                 alert.addAction(UIAlertAction(title: "Camera", style: .default) { _ in self.showImagePicker(sourceType: .camera) })
             }
             
-            // 2. Photo Library (PHPicker)
             alert.addAction(UIAlertAction(title: "Photo Library", style: .default) { _ in
                 var config = PHPickerConfiguration(photoLibrary: .shared())
                 config.selectionLimit = (SWVContext.shared.multipleUploadsEnabled && parameters.allowsMultipleSelection) ? 0 : 1
@@ -115,7 +102,6 @@ struct WebView: UIViewRepresentable {
                 self.present(picker)
             })
             
-            // 3. Document Browser
             alert.addAction(UIAlertAction(title: "Browse Files", style: .default) { _ in
                 let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
                 documentPicker.delegate = self
@@ -124,14 +110,12 @@ struct WebView: UIViewRepresentable {
             })
             
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
-            
             self.present(alert)
         }
 
         // MARK: - PHPickerViewControllerDelegate
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
-            
             guard !results.isEmpty else {
                 self.filePickerCompletionHandler?(nil)
                 return
@@ -142,7 +126,6 @@ struct WebView: UIViewRepresentable {
 
             for result in results {
                 group.enter()
-                // Request a file representation compatible with the system
                 result.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { (url, error) in
                     if let originalUrl = url {
                         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(originalUrl.pathExtension)
@@ -154,26 +137,36 @@ struct WebView: UIViewRepresentable {
             }
 
             group.notify(queue: .main) {
-                self.filePickerCompletionHandler?(processedURLs.isEmpty ? nil : processedURLs)
+                self.filePickerCompletionHandler?(processedURLs)
             }
         }
 
-        // MARK: - Helper Methods
-        private func present(_ viewController: UIViewController) {
-            if let rootVC = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first(where: \.isKeyWindow)?.rootViewController {
-                rootVC.present(viewController, animated: true)
+        // MARK: - UIImagePickerControllerDelegate
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            picker.dismiss(animated: true)
+            if let url = info[.imageURL] as? URL ?? info[.mediaURL] as? URL {
+                self.filePickerCompletionHandler?([url])
+            } else {
+                self.filePickerCompletionHandler?(nil)
             }
         }
 
-        private func showImagePicker(sourceType: UIImagePickerController.SourceType) {
-            let picker = UIImagePickerController()
-            picker.sourceType = sourceType
-            picker.delegate = self
-            picker.mediaTypes = [UTType.image.identifier, UTType.movie.identifier]
-            self.present(picker)
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
+            self.filePickerCompletionHandler?(nil)
         }
 
-        @objc func handleRefresh() {
+        // MARK: - UIDocumentPickerDelegate
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            self.filePickerCompletionHandler?(urls)
+        }
+
+        func documentPickerDidCancel(_ controller: UIDocumentPickerViewController) {
+            self.filePickerCompletionHandler?(nil)
+        }
+
+        // MARK: - Selectors & Logic
+        @objc func handleRefresh(_ sender: UIRefreshControl) {
             webView.reload()
         }
 
@@ -186,17 +179,20 @@ struct WebView: UIViewRepresentable {
             webView.evaluateJavaScript("if (typeof setPlatform === 'function') { setPlatform('ios'); }")
             if let url = webView.url { PluginManager.shared.webViewDidFinishLoad(url: url) }
         }
-        
-        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-            if !navigationResponse.canShowMIMEType {
-                decisionHandler(.download)
-            } else {
-                decisionHandler(.allow)
+
+        private func present(_ viewController: UIViewController) {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+                rootVC.present(viewController, animated: true)
             }
         }
-        
-        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-            download.delegate = self
+
+        private func showImagePicker(sourceType: UIImagePickerController.SourceType) {
+            let picker = UIImagePickerController()
+            picker.sourceType = sourceType
+            picker.delegate = self
+            picker.mediaTypes = [UTType.image.identifier, UTType.movie.identifier]
+            self.present(picker)
         }
     }
 }
@@ -210,6 +206,6 @@ extension WebView.Coordinator: WKDownloadDelegate {
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        print("Download finished successfully.")
+        print("Download finished.")
     }
 }
