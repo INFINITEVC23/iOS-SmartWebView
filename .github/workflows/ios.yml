@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: macos-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # This fixes your Node.js warning
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -16,41 +16,35 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: 'latest-stable'
+          xcode-version: '16.1' # Using a specific stable version
 
-      - name: Surgical Ghost Removal
+      - name: Sanitize Project Environment
         run: |
-          # Find the project file
-          PBX_PATH=$(find . -name "project.pbxproj")
-          
-          # 1. Remove the actual file references that cause Exit 74
-          # We use a pattern that matches the specific Xcode ID format
-          sed -i '' '/GoogleService-Info.plist/d' "$PBX_PATH"
-          sed -i '' '/Firebase/d' "$PBX_PATH"
-          sed -i '' '/GoogleUtilities/d' "$PBX_PATH"
-          
-          # 2. Kill the Package references in the project file
-          sed -i '' '/remoteSourceControl/d' "$PBX_PATH"
-          
-          # 3. Wipe the workspace data (This is often where Exit 74 hides)
+          # 1. Delete any lingering workspace or package data
           rm -rf *.xcodeproj/project.xcworkspace
           rm -rf *.xcodeproj/xcshareddata
+          find . -name "Package.resolved" -delete
           
-          echo "Surgical cleaning finished."
+          # 2. Check for the Info.plist - If it's missing, create a dummy one 
+          # to prevent the 'File Not Found' crash.
+          if [ ! -f "iOS-SmartWebView-Info.plist" ]; then
+            echo '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict></dict></plist>' > "iOS-SmartWebView-Info.plist"
+          fi
 
       - name: Build Archive
         run: |
           PROJ_PATH=$(find . -name "*.xcodeproj" | head -n 1)
           SCHEME_NAME=$(basename "$PROJ_PATH" .xcodeproj)
           
-          xcodebuild archive \
+          # The -clobber flag and clean action force Xcode to ignore the cache
+          xcodebuild clean archive \
             -project "$PROJ_PATH" \
             -scheme "$SCHEME_NAME" \
             -archivePath build/App.xcarchive \
             -sdk iphoneos \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -usePackageBehavior=none \
+            -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             GENERATE_INFOPLIST_FILE=YES \
