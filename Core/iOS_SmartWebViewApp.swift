@@ -1,60 +1,15 @@
 import SwiftUI
-import UserNotifications
-
-// --- GLOBAL SETTINGS ---
-class SWVContext {
-    static let shared = SWVContext()
-    var pullToRefreshEnabled = true
-    var fileUploadsEnabled = true
-    var multipleUploadsEnabled = true
-    var enabledPlugins: [String] = ["Toast", "Dialog", "Location", "Rating", "Playground"]
-}
-
-class PermissionManager {
-    static let shared = PermissionManager()
-    func requestInitialPermissions() {
-        // Safe check for LocationPlugin
-        // LocationPlugin.shared.requestInitialPermission()
-    }
-}
-
-// Fixed placeholders for plugins
-class ToastPlugin { static func register() {} }
-class DialogPlugin { static func register() {} }
-class RatingPlugin { static func register() {} }
-class Playground { static func register() {} }
-class LocationPlugin { static let shared = LocationPlugin(); func requestInitialPermission() {} }
-
-// --- APP DELEGATE ---
-class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
-        UNUserNotificationCenter.current().delegate = self
-        return true
-    }
-}
 
 @main
 struct iOS_SmartWebViewApp: App {
+    // This uses the AppDelegate already defined in your Managers/AppDelegate.swift
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    
-    init() {
-        registerPlugins()
-        PermissionManager.shared.requestInitialPermissions()
-    }
     
     var body: some Scene {
         WindowGroup {
-            WebView(url: URL(string: "https://www.google.com")!)
+            // This uses the main ContentView which handles the WebView and Config
+            ContentView()
                 .ignoresSafeArea()
         }
-    }
-    
-    private func registerPlugins() {
-        let context = SWVContext.shared
-        if context.enabledPlugins.contains("Toast") { ToastPlugin.register() }
-        if context.enabledPlugins.contains("Playground") { Playground.register() }
-        if context.enabledPlugins.contains("Dialog") { DialogPlugin.register() }
-        if context.enabledPlugins.contains("Location") { LocationPlugin.register() }
-        if context.enabledPlugins.contains("Rating") { RatingPlugin.register() }
     }
 }
