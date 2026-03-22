@@ -24,8 +24,7 @@
 		8F0C92992E2976810043A6D9 /* RatingPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0C92982E2976810043A6D9 /* RatingPlugin.swift */; };
 		8F7E7BDA2E340B77002848D5 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7E7BD92E340B77002848D5 /* AppDelegate.swift */; };
 		8F7E7BDD2E340CB0002848D5 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 8F7E7BDC2E340CB0002848D5 /* FirebaseAuth */; };
-		8F7E7BDF2E340CB0002848D5 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 8F7E7BDE2E340CB0002848D5 /* FirebaseMessaging */; };
-		8F7E7BE52E341412002848D5 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8F7E7BE42E341412002848D5 /* GoogleService-Info.plist */; };
+		8F7E7BDF2E340CB0002848D5 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 8F7E7BDE2E340CB0002848D5 /* 
 		8F7E7BEA2E34F228002848D5 /* FirebasePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7E7BE92E34F228002848D5 /* FirebasePlugin.swift */; };
 /* End PBXBuildFile section */
 
