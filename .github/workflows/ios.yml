@@ -3,8 +3,7 @@ name: iOS build
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  pull_request: [ "main" ]
 
 jobs:
   build:
@@ -22,7 +21,6 @@ jobs:
 
       - name: Create ExportOptions.plist
         run: |
-          # This creates the file temporarily on the runner so you don't have to
           cat <<EOF > ExportOptions.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -42,6 +40,7 @@ jobs:
 
       - name: Build Archive
         run: |
+          # The "CODE_SIGNING" flags allow us to build without an Apple ID
           xcodebuild archive \
             -scheme "$SCHEME" \
             -sdk iphoneos \
