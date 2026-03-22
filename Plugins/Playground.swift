@@ -18,15 +18,6 @@ class Playground: PluginInterface {
         if context.playgroundEnabled && context.debugMode {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.injectPlaygroundUI()
-                self.runDiagnostics()
-            }
-        }
-    }
-    
-    private func runDiagnostics() {
-        if let firebasePlugin = PluginManager.shared.getPlugin(named: "Firebase") as? FirebasePlugin {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-                firebasePlugin.showTestNotification()
             }
         }
     }
@@ -36,8 +27,7 @@ class Playground: PluginInterface {
         {
           "Toast": \(PluginManager.shared.getPlugin(named: "Toast") != nil),
           "Dialog": \(PluginManager.shared.getPlugin(named: "Dialog") != nil),
-          "Location": \(PluginManager.shared.getPlugin(named: "Location") != nil),
-          "Firebase": \(PluginManager.shared.getPlugin(named: "Firebase") != nil)
+          "Location": \(PluginManager.shared.getPlugin(named: "Location") != nil)
         }
         """
         
