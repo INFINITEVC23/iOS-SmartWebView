@@ -23,11 +23,10 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Clean Ghost Plugins
+      - name: Clean Project Map
         run: |
           PROJECT_FILE=$(find . -name "project.pbxproj" | head -n 1)
           if [ -n "$PROJECT_FILE" ]; then
-            echo "Purging missing plugin references..."
             sed -i '' '/LocationPlugin.swift/d' "$PROJECT_FILE" || true
             sed -i '' '/DialogPlugin.swift/d' "$PROJECT_FILE" || true
             sed -i '' '/RatingPlugin.swift/d' "$PROJECT_FILE" || true
@@ -39,28 +38,24 @@ jobs:
             grep -v "FirebasePlugin" "$PROJECT_FILE" > temp && mv temp "$PROJECT_FILE"
           fi
 
-      - name: Auto-Detect and Build
-        run: |
-          # Find the project file
-          PROJECT_NAME=$(ls -d *.xcodeproj | head -n 1)
-          
-          # This command extracts the first available scheme from the project
-          SCHEME_NAME=$(xcodebuild -list -project "$PROJECT_NAME" -json | ruby -e "require 'json'; puts JSON.parse(STDIN.read)['project']['schemes'][0]")
-          
-          echo "Detected Scheme: $SCHEME_NAME"
-          
-          if [ -z "$SCHEME_NAME" ] || [ "$SCHEME_NAME" == "null" ]; then
-            echo "No schemes found! Using project basename as fallback."
-            SCHEME_NAME=$(basename "$PROJECT_NAME" .xcodeproj)
-          fi
+      - name: Debug File Structure
+        run: find . -maxdepth 4 -not -path '*/.*'
 
+      - name: Build Archive (Brute Force)
+        run: |
+          PROJECT_NAME=$(ls -d *.xcodeproj | head -n 1)
+          # We use the project name as the scheme, but add 'destination' to force it
+          SCHEME_NAME=$(basename "$PROJECT_NAME" .xcodeproj)
+          
           xcodebuild archive \
             -project "$PROJECT_NAME" \
             -scheme "$SCHEME_NAME" \
             -archivePath build/BloxTime.xcarchive \
             -sdk iphoneos \
             -configuration Release \
+            -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             ENTITLEMENTS_REQUIRED=NO \
+            CLEAN_BEFORE_RELEASE=YES \
             COMPILER_INDEX_STORE_ENABLE=NO
