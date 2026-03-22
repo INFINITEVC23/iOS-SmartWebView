@@ -1,5 +1,12 @@
 import SwiftUI
 
+// FIXED: Added missing AppDelegate class
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+        return true
+    }
+}
+
 @main
 struct iOS_SmartWebViewApp: App {
     
@@ -7,12 +14,14 @@ struct iOS_SmartWebViewApp: App {
     
     init() {
         registerPlugins()
+        // FIXED: Now calls the shared instance correctly
         PermissionManager.shared.requestInitialPermissions()
     }
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            // Change the URL string below to your website
+            WebView(url: URL(string: "https://www.google.com")!)
         }
     }
     
