@@ -2,9 +2,28 @@ import SwiftUI
 import WebKit
 import PhotosUI
 import UniformTypeIdentifiers
-import CoreLocation
 
-// MARK: - WebView Store
+// --- REQUIRED BRIDGE HELPERS ---
+class PluginManager {
+    static let shared = PluginManager()
+    func initializePlugins(context: SWVContext, webView: WKWebView) {}
+    func handleScriptMessage(message: WKScriptMessage) { print("JS Message: \(message.name)") }
+    func webViewDidFinishLoad(url: URL) {}
+}
+
+class URLHandler {
+    static func handle(url: URL, webView: WKWebView) -> Bool { return false }
+}
+
+class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
+    weak var delegate: WKScriptMessageHandler?
+    init(delegate: WKScriptMessageHandler) { self.delegate = delegate }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        delegate?.userContentController(userContentController, didReceive: message)
+    }
+}
+// -------------------------------
+
 class WebViewStore: ObservableObject {
     let webView: WKWebView
     init() {
@@ -13,7 +32,6 @@ class WebViewStore: ObservableObject {
     }
 }
 
-// MARK: - Main WebView Struct
 struct WebView: UIViewRepresentable {
     let url: URL
     @StateObject private var webViewStore = WebViewStore()
@@ -53,16 +71,15 @@ struct WebView: UIViewRepresentable {
             self.webView = webView
             super.init()
             
-            let swvContext = SWVContext.shared
             let userContentController = self.webView.configuration.userContentController
             let leakFree = LeakFreeScriptHandler(delegate: self)
             
+            let swvContext = SWVContext.shared
             if swvContext.enabledPlugins.contains("Toast") { userContentController.add(leakFree, name: "toast") }
             if swvContext.enabledPlugins.contains("Dialog") { userContentController.add(leakFree, name: "dialog") }
             if swvContext.enabledPlugins.contains("Location") { userContentController.add(leakFree, name: "location") }
         }
         
-        // ... (Keep all your existing Coordinator methods here exactly as they were) ...
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             if let refreshControl = webView.scrollView.subviews.first(where: { $0 is UIRefreshControl }) as? UIRefreshControl {
                 refreshControl.endRefreshing()
@@ -110,7 +127,10 @@ struct WebView: UIViewRepresentable {
         }
         
         private func present(_ viewController: UIViewController) {
-            UIApplication.shared.windows.first(where: \.isKeyWindow)?.rootViewController?.present(viewController, animated: true)
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+                rootVC.present(viewController, animated: true)
+            }
         }
 
         private func showImagePicker(sourceType: UIImagePickerController.SourceType) {
