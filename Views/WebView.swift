@@ -3,11 +3,11 @@ import WebKit
 import PhotosUI
 import UniformTypeIdentifiers
 
-// --- REQUIRED BRIDGE HELPERS ---
+// --- BRIDGE HELPERS ---
 class PluginManager {
     static let shared = PluginManager()
     func initializePlugins(context: SWVContext, webView: WKWebView) {}
-    func handleScriptMessage(message: WKScriptMessage) { print("JS Message: \(message.name)") }
+    func handleScriptMessage(message: WKScriptMessage) { print("JS: \(message.name)") }
     func webViewDidFinishLoad(url: URL) {}
 }
 
@@ -22,36 +22,28 @@ class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
         delegate?.userContentController(userContentController, didReceive: message)
     }
 }
-// -------------------------------
-
-class WebViewStore: ObservableObject {
-    let webView: WKWebView
-    init() {
-        let configuration = WKWebViewConfiguration()
-        self.webView = WKWebView(frame: .zero, configuration: configuration)
-    }
-}
+// ----------------------
 
 struct WebView: UIViewRepresentable {
     let url: URL
-    @StateObject private var webViewStore = WebViewStore()
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(self, webView: webViewStore.webView)
+        Coordinator(self)
     }
 
     func makeUIView(context: Context) -> WKWebView {
-        let webView = webViewStore.webView
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
         
         if SWVContext.shared.pullToRefreshEnabled {
-            let refreshControl = UIRefreshControl()
-            refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh), for: .valueChanged)
-            webView.scrollView.addSubview(refreshControl)
-            webView.scrollView.bounces = true
+            let refresh = UIRefreshControl()
+            refresh.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh), for: .valueChanged)
+            webView.scrollView.addSubview(refresh)
         }
         
         webView.load(URLRequest(url: url))
@@ -63,116 +55,50 @@ struct WebView: UIViewRepresentable {
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKUIDelegate, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIDocumentPickerDelegate, WKDownloadDelegate {
         
         var parent: WebView
-        var webView: WKWebView 
         private var filePickerCompletionHandler: (([URL]?) -> Void)?
 
-        init(_ parent: WebView, webView: WKWebView) {
+        init(_ parent: WebView) {
             self.parent = parent
-            self.webView = webView
             super.init()
-            
-            let userContentController = self.webView.configuration.userContentController
-            let leakFree = LeakFreeScriptHandler(delegate: self)
-            
-            let swvContext = SWVContext.shared
-            if swvContext.enabledPlugins.contains("Toast") { userContentController.add(leakFree, name: "toast") }
-            if swvContext.enabledPlugins.contains("Dialog") { userContentController.add(leakFree, name: "dialog") }
-            if swvContext.enabledPlugins.contains("Location") { userContentController.add(leakFree, name: "location") }
         }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            if let refreshControl = webView.scrollView.subviews.first(where: { $0 is UIRefreshControl }) as? UIRefreshControl {
-                refreshControl.endRefreshing()
-            }
-            webView.evaluateJavaScript("if (typeof setPlatform === 'function') { setPlatform('ios'); }", completionHandler: nil)
+            webView.scrollView.subviews.compactMap { $0 as? UIRefreshControl }.forEach { $0.endRefreshing() }
             PluginManager.shared.webViewDidFinishLoad(url: webView.url ?? parent.url)
         }
         
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if let url = navigationAction.request.url, URLHandler.handle(url: url, webView: webView) {
-                decisionHandler(.cancel); return
-            }
-            decisionHandler(.allow)
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            PluginManager.shared.handleScriptMessage(message: message)
         }
         
-        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-            if !navigationResponse.canShowMIMEType { decisionHandler(.download) } else { decisionHandler(.allow) }
+        @objc func handleRefresh(sender: UIRefreshControl) {
+            sender.superview?.subviews.compactMap { $0 as? WKWebView }.first?.reload()
         }
-        
-        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { download.delegate = self }
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) { PluginManager.shared.handleScriptMessage(message: message) }
-        @objc func handleRefresh() { webView.reload() }
 
+        // File/Photo Picker Logic
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
-            guard SWVContext.shared.fileUploadsEnabled else { completionHandler(nil); return }
             self.filePickerCompletionHandler = completionHandler
-            let alert = UIAlertController(title: "Select Source", message: nil, preferredStyle: .actionSheet)
-            if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                alert.addAction(UIAlertAction(title: "Camera", style: .default) { _ in self.showImagePicker(sourceType: .camera) })
-            }
+            let alert = UIAlertController(title: "Upload", message: nil, preferredStyle: .actionSheet)
             alert.addAction(UIAlertAction(title: "Photo Library", style: .default) { _ in
-                var config = PHPickerConfiguration(photoLibrary: .shared())
-                config.selectionLimit = SWVContext.shared.multipleUploadsEnabled && parameters.allowsMultipleSelection ? 0 : 1
+                var config = PHPickerConfiguration()
+                config.selectionLimit = 1
                 let picker = PHPickerViewController(configuration: config)
                 picker.delegate = self
-                self.present(picker)
+                self.getTopVC()?.present(picker, animated: true)
             })
-            alert.addAction(UIAlertAction(title: "Browse Files", style: .default) { _ in
-                let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-                picker.delegate = self
-                self.present(picker)
-            })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in self.filePickerCompletionHandler?(nil) })
-            self.present(alert)
-        }
-        
-        private func present(_ viewController: UIViewController) {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let rootVC = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
-                rootVC.present(viewController, animated: true)
-            }
-        }
-
-        private func showImagePicker(sourceType: UIImagePickerController.SourceType) {
-            let picker = UIImagePickerController()
-            picker.sourceType = sourceType
-            picker.delegate = self
-            picker.mediaTypes = [UTType.image.identifier, UTType.movie.identifier]
-            self.present(picker)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            getTopVC()?.present(alert, animated: true)
         }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
-            var urls: [URL] = []; let group = DispatchGroup()
-            for result in results {
-                group.enter()
-                result.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, _ in
-                    if let url = url {
-                        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + url.pathExtension)
-                        try? FileManager.default.copyItem(at: url, to: temp)
-                        urls.append(temp)
-                    }
-                    group.leave()
-                }
+            results.first?.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, _ in
+                self.filePickerCompletionHandler?(url != nil ? [url!] : nil)
             }
-            group.notify(queue: .main) { self.filePickerCompletionHandler?(urls) }
         }
 
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            picker.dismiss(animated: true)
-            let url = (info[.mediaURL] as? URL) ?? (info[.originalImage] as? UIImage)?.jpegData(compressionQuality: 0.5).map { data in
-                let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
-                try? data.write(to: temp)
-                return temp
-            }
-            self.filePickerCompletionHandler?(url != nil ? [url!] : nil)
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { picker.dismiss(animated: true); self.filePickerCompletionHandler?(nil) }
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { self.filePickerCompletionHandler?(urls) }
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { self.filePickerCompletionHandler?(nil) }
-        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
-            completionHandler(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(suggestedFilename))
+        private func getTopVC() -> UIViewController? {
+            UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.windows.first { $0.isKeyWindow }?.rootViewController }.first
         }
     }
 }
