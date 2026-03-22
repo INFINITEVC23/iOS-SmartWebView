@@ -222,7 +222,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8F7E7BE52E341412002848D5 /* GoogleService-Info.plist in Resources */,
 				8F0C92802E283A1B0043A6D9 /* swv.properties in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
