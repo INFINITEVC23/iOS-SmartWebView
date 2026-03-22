@@ -23,9 +23,6 @@
 		8F0C92972E29763F0043A6D9 /* LocationPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0C92962E29763F0043A6D9 /* LocationPlugin.swift */; };
 		8F0C92992E2976810043A6D9 /* RatingPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0C92982E2976810043A6D9 /* RatingPlugin.swift */; };
 		8F7E7BDA2E340B77002848D5 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7E7BD92E340B77002848D5 /* AppDelegate.swift */; };
-		8F7E7BDD2E340CB0002848D5 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 8F7E7BDC2E340CB0002848D5 /* FirebaseAuth */; };
-		8F7E7BDF2E340CB0002848D5 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 8F7E7BDE2E340CB0002848D5 /* 
-		8F7E7BEA2E34F228002848D5 /* FirebasePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7E7BE92E34F228002848D5 /* FirebasePlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -66,8 +63,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8F7E7BDF2E340CB0002848D5 /* FirebaseMessaging in Frameworks */,
-				8F7E7BDD2E340CB0002848D5 /* FirebaseAuth in Frameworks */,
+				 
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -130,7 +126,6 @@
 				8F0C92982E2976810043A6D9 /* RatingPlugin.swift */,
 				8F0C92962E29763F0043A6D9 /* LocationPlugin.swift */,
 				8F0C92942E2976060043A6D9 /* DialogPlugin.swift */,
-				8F7E7BE92E34F228002848D5 /* FirebasePlugin.swift */,
 			);
 			path = Plugins;
 			sourceTree = "<group>";
@@ -172,8 +167,6 @@
 			);
 			name = "iOS-SmartWebView";
 			packageProductDependencies = (
-				8F7E7BDC2E340CB0002848D5 /* FirebaseAuth */,
-				8F7E7BDE2E340CB0002848D5 /* FirebaseMessaging */,
 			);
 			productName = "iOS-SmartWebView";
 			productReference = 8F0C92582E2822C00043A6D9 /* iOS-SmartWebView.app */;
@@ -205,7 +198,7 @@
 			mainGroup = 8F0C924F2E2822C00043A6D9;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				8F7E7BDB2E340CB0002848D5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8F0C92592E2822C00043A6D9 /* Products */;
@@ -248,7 +241,6 @@
 				8F0C928B2E283C090043A6D9 /* ToastPlugin.swift in Sources */,
 				8F0C927A2E2839ED0043A6D9 /* ConfigLoader.swift in Sources */,
 				8F0C92992E2976810043A6D9 /* RatingPlugin.swift in Sources */,
-				8F7E7BEA2E34F228002848D5 /* FirebasePlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -475,9 +467,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		8F7E7BDB2E340CB0002848D5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 12.0.0;
@@ -486,15 +476,9 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		8F7E7BDC2E340CB0002848D5 /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 8F7E7BDB2E340CB0002848D5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAuth;
 		};
-		8F7E7BDE2E340CB0002848D5 /* FirebaseMessaging */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 8F7E7BDB2E340CB0002848D5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
