@@ -19,23 +19,27 @@ jobs:
         with:
           xcode-version: 'latest-stable'
 
-      - name: Nuclear Cleanup & Path Fix
+      - name: Force Project Cleanup
         run: |
           PROJECT_FILE=$(find . -name "project.pbxproj")
           
-          # 1. Purge missing plugins that cause crashes
-          sed -i '' '/LocationPlugin/d' "$PROJECT_FILE" || true
-          sed -i '' '/DialogPlugin/d' "$PROJECT_FILE" || true
-          sed -i '' '/RatingPlugin/d' "$PROJECT_FILE" || true
-          sed -i '' '/FirebasePlugin/d' "$PROJECT_FILE" || true
-          sed -i '' '/Firebase/d' "$PROJECT_FILE" || true
-          sed -i '' '/Google/d' "$PROJECT_FILE" || true
+          # Delete all references to missing files in the project map
+          sed -i '' '/LocationPlugin.swift/d' "$PROJECT_FILE" || true
+          sed -i '' '/DialogPlugin.swift/d' "$PROJECT_FILE" || true
+          sed -i '' '/RatingPlugin.swift/d' "$PROJECT_FILE" || true
+          sed -i '' '/FirebasePlugin.swift/d' "$PROJECT_FILE" || true
           
-          # 2. Tell Xcode the Assets are in the Root folder
-          # We change the project path to look at the top level
-          sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; ASSETCATALOG_COMPILER_SEARCH_FLAGS = "--extra-config-path $(SRCROOT)\/..";/g' "$PROJECT_FILE" || true
-          
-          echo "Cleanup and Root Path pointing finished."
+          # Use Python to surgically remove any remaining broken Build Phase entries
+          python3 -c "
+          import os
+          path = '$PROJECT_FILE'
+          with open(path, 'r') as f: lines = f.readlines()
+          with open(path, 'w') as f:
+              for line in lines:
+                  if not any(x in line for x in ['LocationPlugin', 'DialogPlugin', 'RatingPlugin', 'FirebasePlugin']):
+                      f.write(line)
+          "
+          echo "Ghost plugins removed from project structure."
 
       - name: Set Default Scheme
         run: |
@@ -48,6 +52,7 @@ jobs:
           SCHEME=$(cat default_scheme)
           PROJECT=$(ls -d *.xcodeproj | head -n 1)
           
+          # We force look for the icon in the root folder as requested
           xcodebuild archive \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -58,6 +63,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon \
+            ASSETCATALOG_COMPILER_SEARCH_FLAGS="--extra-config-path $(pwd)" \
             IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             clean archive
 
@@ -67,7 +73,7 @@ jobs:
           cp -r build/BloxTime.xcarchive/Products/Applications/*.app build/Payload
           cd build && zip -vr BloxTime.ipa Payload
 
-      - name: Upload BloxTime Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: BloxTime-Installer
