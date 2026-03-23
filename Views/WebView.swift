@@ -3,44 +3,6 @@ import WebKit
 import PhotosUI
 import UniformTypeIdentifiers
 
-// --- NEW: MODERN SURVEY CONTAINER ---
-struct SurveyView: View {
-    let url: URL
-    @Environment(\.dismiss) var dismiss 
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // --- MODERN TITLE BAR ---
-            HStack {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Text("Survey")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                Spacer()
-                Button(action: {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 18, weight: .bold))
-                }
-            }
-            .padding()
-            .background(Color(.systemBackground))
-            
-            Divider()
-
-            // --- THE WEBVIEW ---
-            WebView(url: url)
-                .ignoresSafeArea(edges: .bottom)
-        }
-    }
-}
-
 // --- Memory Management Helper ---
 class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
     weak var delegate: WKScriptMessageHandler?
@@ -53,6 +15,9 @@ class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
 // --- WEBVIEW IMPLEMENTATION ---
 struct WebView: UIViewRepresentable {
     let url: URL
+    
+    // This allows us to trigger the "Close" button functionality
+    @Environment(\.dismiss) var dismiss
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -62,6 +27,7 @@ struct WebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         
         // --- FIX: VIEWPORT & SCROLLING ---
+        // This locks the scale to 1.0 and fixes the "buggy" scrolling zoom
         let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
@@ -73,11 +39,16 @@ struct WebView: UIViewRepresentable {
         let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         config.userContentController.addUserScript(userScript)
         
+        // 1. Enable the JavaScript Bridge
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
         config.userContentController.add(leakFreeHandler, name: "nativeApp")
+        
+        // --- FIX: Media Playback ---
         config.allowsInlineMediaPlayback = true
         
         let webView = WKWebView(frame: .zero, configuration: config)
+        
+        // 2. Setup Delegates
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator // CRITICAL FOR POPUPS
         
@@ -87,8 +58,10 @@ struct WebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .clear
         
+        // 3. Initialize Plugins
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
         
+        // 4. Modern Pull-to-Refresh
         if SWVContext.shared.pullToRefreshEnabled {
             let refresh = UIRefreshControl()
             refresh.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh), for: .valueChanged)
@@ -110,6 +83,7 @@ struct WebView: UIViewRepresentable {
         init(_ parent: WebView) {
             self.parent = parent
             super.init()
+            // Link for the title bar Refresh button
             NotificationCenter.default.addObserver(self, selector: #selector(triggerReload), name: NSNotification.Name("ReloadWebView"), object: nil)
         }
         
@@ -117,9 +91,9 @@ struct WebView: UIViewRepresentable {
             webViewInstance?.reload()
         }
 
-        // MARK: - WKUIDelegate (FIX: THIS LOADS POPUPS)
+        // MARK: - WKUIDelegate (POPUP FIX)
+        // This ensures surveys actually load when they try to open a new tab
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            // If the survey tries to open a new window, force it to load in the current view instead
             if navigationAction.targetFrame == nil {
                 webView.load(navigationAction.request)
             }
@@ -162,7 +136,9 @@ struct WebView: UIViewRepresentable {
                     self.getTopVC()?.present(picker, animated: true)
                 }
             })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in 
+                completionHandler(nil) 
+            })
             getTopVC()?.present(alert, animated: true)
         }
 
@@ -199,5 +175,45 @@ struct WebView: UIViewRepresentable {
             }
             return topController
         }
+    }
+}
+
+// --- NEW: THE ACTUAL SURVEY TITLE BAR WRAPPER ---
+// Use this for your survey popups to get the Close/Refresh buttons
+struct SurveyContainerView: View {
+    let url: URL
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Modern Header
+            HStack {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+                Text("Survey")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Spacer()
+                Button(action: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.blue)
+                }
+            }
+            .padding()
+            .background(Color.black)
+            
+            Divider().background(Color.gray)
+
+            WebView(url: url)
+                .ignoresSafeArea(edges: .bottom)
+        }
+        .background(Color.black.ignoresSafeArea())
     }
 }
