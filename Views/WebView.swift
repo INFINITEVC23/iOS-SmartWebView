@@ -24,9 +24,9 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // --- FIX: VIEWPORT & CSS INJECTION ---
-        // This locks the scale and injects CSS to ensure the site background fills the screen 
-        // without letting text/buttons hide under the notch.
+        // --- FIX: SUBDOMAIN & VIEWPORT LAYOUT ---
+        // This script fixes scaling and prevents subdomains from "breaking" by 
+        // ensuring the safe-area-insets are respected across all pages.
         let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
@@ -34,7 +34,21 @@ struct WebView: UIViewRepresentable {
         document.getElementsByTagName('head')[0].appendChild(meta);
         
         var style = document.createElement('style');
-        style.innerHTML = 'body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }';
+        style.innerHTML = `
+            :root {
+                --sat: env(safe-area-inset-top);
+                --sab: env(safe-area-inset-bottom);
+            }
+            body { 
+                padding-top: var(--sat) !important; 
+                padding-bottom: var(--sab) !important;
+                -webkit-text-size-adjust: 100%;
+            }
+            /* Fix for subdomains like /earn that might have fixed headers */
+            header, .navbar, .fixed-top { 
+                margin-top: var(--sat) !important; 
+            }
+        `;
         document.head.appendChild(style);
         """
         let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
@@ -48,8 +62,8 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // --- FIX: LAYOUT BEHAVIOR ---
-        webView.scrollView.contentInsetAdjustmentBehavior = .never // We handle spacing via the title bar
+        // --- FIX: SCROLLING & BACKGROUND ---
+        webView.scrollView.contentInsetAdjustmentBehavior = .never 
         webView.scrollView.bounces = true 
         webView.isOpaque = false
         webView.backgroundColor = .clear
@@ -176,50 +190,45 @@ struct SurveyContainerView: View {
         VStack(spacing: 0) {
             // --- CUSTOM MODERN TITLE BAR ---
             ZStack {
-                Color(hex: "121212") // Dark mode background
+                Color(hex: "121212") 
                 
                 HStack {
+                    // Modern Close Button
                     Button(action: { dismiss() }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .bold))
-                            Text("Close")
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                        .foregroundColor(.white.opacity(0.8))
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(20)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(Circle().fill(Color.white.opacity(0.15)))
                     }
                     
                     Spacer()
                     
                     Text("Survey")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     
                     Spacer()
                     
+                    // Modern Refresh Button
                     Button(action: {
                         NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
                     }) {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.system(size: 17, weight: .bold))
                             .foregroundColor(.blue)
-                            .padding(8)
-                            .background(Color.blue.opacity(0.1))
-                            .clipShape(Circle())
+                            .padding(10)
+                            .background(Circle().fill(Color.blue.opacity(0.15)))
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
             }
-            .frame(height: 60)
+            .frame(height: 70)
             
-            Divider().background(Color.white.opacity(0.2))
+            Divider().background(Color.white.opacity(0.1))
 
-            // --- WEBVIEW ---
+            // --- SURVEY CONTENT ---
             WebView(url: url)
                 .background(Color.black)
         }
@@ -227,7 +236,7 @@ struct SurveyContainerView: View {
     }
 }
 
-// Helper for the hex color to match your app theme
+// Helper for Hex Colors
 extension Color {
     init(hex: String) {
         let scanner = Scanner(string: hex)
