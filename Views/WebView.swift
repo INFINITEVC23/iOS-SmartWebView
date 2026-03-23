@@ -15,8 +15,6 @@ class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
 // --- WEBVIEW IMPLEMENTATION ---
 struct WebView: UIViewRepresentable {
     let url: URL
-    
-    // This allows us to trigger the "Close" button functionality
     @Environment(\.dismiss) var dismiss
 
     func makeCoordinator() -> Coordinator {
@@ -26,42 +24,38 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // --- FIX: VIEWPORT & SCROLLING ---
-        // This locks the scale to 1.0 and fixes the "buggy" scrolling zoom
+        // --- FIX: VIEWPORT & CSS INJECTION ---
+        // This locks the scale and injects CSS to ensure the site background fills the screen 
+        // without letting text/buttons hide under the notch.
         let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
         document.getElementsByTagName('head')[0].appendChild(meta);
-        document.documentElement.style.webkitUserSelect = 'none'; 
-        document.documentElement.style.webkitTouchCallout = 'none';
+        
+        var style = document.createElement('style');
+        style.innerHTML = 'body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }';
+        document.head.appendChild(style);
         """
         let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         config.userContentController.addUserScript(userScript)
         
-        // 1. Enable the JavaScript Bridge
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
         config.userContentController.add(leakFreeHandler, name: "nativeApp")
-        
-        // --- FIX: Media Playback ---
         config.allowsInlineMediaPlayback = true
         
         let webView = WKWebView(frame: .zero, configuration: config)
-        
-        // 2. Setup Delegates
         webView.navigationDelegate = context.coordinator
-        webView.uiDelegate = context.coordinator // CRITICAL FOR POPUPS
+        webView.uiDelegate = context.coordinator
         
-        // --- FIX: SCROLLING & APPEARANCE ---
-        webView.scrollView.contentInsetAdjustmentBehavior = .always
+        // --- FIX: LAYOUT BEHAVIOR ---
+        webView.scrollView.contentInsetAdjustmentBehavior = .never // We handle spacing via the title bar
         webView.scrollView.bounces = true 
         webView.isOpaque = false
         webView.backgroundColor = .clear
         
-        // 3. Initialize Plugins
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
         
-        // 4. Modern Pull-to-Refresh
         if SWVContext.shared.pullToRefreshEnabled {
             let refresh = UIRefreshControl()
             refresh.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh), for: .valueChanged)
@@ -83,7 +77,6 @@ struct WebView: UIViewRepresentable {
         init(_ parent: WebView) {
             self.parent = parent
             super.init()
-            // Link for the title bar Refresh button
             NotificationCenter.default.addObserver(self, selector: #selector(triggerReload), name: NSNotification.Name("ReloadWebView"), object: nil)
         }
         
@@ -91,8 +84,6 @@ struct WebView: UIViewRepresentable {
             webViewInstance?.reload()
         }
 
-        // MARK: - WKUIDelegate (POPUP FIX)
-        // This ensures surveys actually load when they try to open a new tab
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             if navigationAction.targetFrame == nil {
                 webView.load(navigationAction.request)
@@ -100,7 +91,6 @@ struct WebView: UIViewRepresentable {
             return nil
         }
         
-        // MARK: - WKDownloadDelegate
         @MainActor
         func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @Sendable (URL?) -> Void) {
             let tempDir = FileManager.default.temporaryDirectory
@@ -122,7 +112,6 @@ struct WebView: UIViewRepresentable {
             webViewInstance?.reload()
         }
 
-        // MARK: - File Picker Logic (Preserved)
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
             self.filePickerCompletionHandler = completionHandler
             let alert = UIAlertController(title: "Upload File", message: nil, preferredStyle: .actionSheet)
@@ -178,42 +167,75 @@ struct WebView: UIViewRepresentable {
     }
 }
 
-// --- NEW: THE ACTUAL SURVEY TITLE BAR WRAPPER ---
-// Use this for your survey popups to get the Close/Refresh buttons
+// --- UPDATED: MODERN SURVEY CONTAINER ---
 struct SurveyContainerView: View {
     let url: URL
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
-            // Modern Header
-            HStack {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(.gray)
-                }
-                Spacer()
-                Text("Survey")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Spacer()
-                Button(action: {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
-                }) {
-                    Image(systemName: "arrow.clockwise")
+            // --- CUSTOM MODERN TITLE BAR ---
+            ZStack {
+                Color(hex: "121212") // Dark mode background
+                
+                HStack {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .bold))
+                            Text("Close")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(20)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("Survey")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.blue)
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(Circle())
+                    }
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 10)
             }
-            .padding()
-            .background(Color.black)
+            .frame(height: 60)
             
-            Divider().background(Color.gray)
+            Divider().background(Color.white.opacity(0.2))
 
+            // --- WEBVIEW ---
             WebView(url: url)
-                .ignoresSafeArea(edges: .bottom)
+                .background(Color.black)
         }
         .background(Color.black.ignoresSafeArea())
+    }
+}
+
+// Helper for the hex color to match your app theme
+extension Color {
+    init(hex: String) {
+        let scanner = Scanner(string: hex)
+        var rgbValue: UInt64 = 0
+        scanner.scanHexInt64(&rgbValue)
+        let r = Double((rgbValue & 0xFF0000) >> 16) / 255.0
+        let g = Double((rgbValue & 0x00FF00) >> 8) / 255.0
+        let b = Double(rgbValue & 0x0000FF) / 255.0
+        self.init(red: r, green: g, blue: b)
     }
 }
