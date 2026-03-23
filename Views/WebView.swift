@@ -38,13 +38,9 @@ struct WebView: UIViewRepresentable {
                 --sab: env(safe-area-inset-bottom);
             }
             body { 
-                padding-top: var(--sat) !important; 
+                /* Removed padding-top here because the SwiftUI Header handles it */
                 padding-bottom: var(--sab) !important;
                 -webkit-text-size-adjust: 100%;
-            }
-            /* Fix for subdomains like /earn that might have fixed headers */
-            header, .navbar, .fixed-top { 
-                margin-top: var(--sat) !important; 
             }
         `;
         document.head.appendChild(style);
@@ -61,7 +57,7 @@ struct WebView: UIViewRepresentable {
         webView.uiDelegate = context.coordinator
         
         // --- FIX: SCROLLING & BACKGROUND ---
-        webView.scrollView.contentInsetAdjustmentBehavior = .never 
+        webView.scrollView.contentInsetAdjustmentBehavior = .always // Changed to always for better site compatibility
         webView.scrollView.bounces = true 
         webView.isOpaque = false
         webView.backgroundColor = .clear
@@ -103,7 +99,6 @@ struct WebView: UIViewRepresentable {
             return nil
         }
         
-        // --- CRITICAL FIX FOR XCODE 16.4 / SWIFT 6 ---
         @MainActor
         func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @Sendable (URL?) -> Void) {
             let tempDir = FileManager.default.temporaryDirectory
@@ -187,47 +182,48 @@ struct SurveyContainerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
-                Color(hex: "121212") 
-                
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Circle().fill(Color.white.opacity(0.15)))
-                    }
-                    
-                    Spacer()
-                    
-                    Text("Survey")
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+            // --- HEADER ---
+            HStack {
+                // Close Button
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.blue)
-                            .padding(10)
-                            .background(Circle().fill(Color.blue.opacity(0.15)))
-                    }
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
+                
+                Spacer()
+                
+                Text("Survey")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                // Refresh Button
+                Button(action: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.blue)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.blue.opacity(0.12)))
+                }
             }
-            .frame(height: 70)
-            
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .padding(.top, 8) // Reduced top padding to let safe area handle it
+            .background(Color(hex: "121212"))
+
             Divider().background(Color.white.opacity(0.1))
 
+            // --- WEB CONTENT ---
             WebView(url: url)
-                .background(Color.black)
+                .edgesIgnoringSafeArea(.bottom) // Allow site to fill bottom
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color(hex: "121212").ignoresSafeArea())
     }
 }
 
