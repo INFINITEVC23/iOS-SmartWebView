@@ -15,7 +15,7 @@ class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
 // --- WEBVIEW IMPLEMENTATION ---
 struct WebView: UIViewRepresentable {
     let url: URL
-    @Binding var isLoading: Bool // Track loading state for the custom UI
+    @Binding var isLoading: Bool // Added to handle the loading state fix
     @Environment(\.dismiss) var dismiss
 
     func makeCoordinator() -> Coordinator {
@@ -25,20 +25,27 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // --- THE "ANTI-BROKEN" FIX ---
-        // We remove 'viewport-fit=cover' to prevent the site from trying to crawl under the notch.
-        // We also force the background to black immediately.
+        // --- FIX: SUBDOMAIN & VIEWPORT LAYOUT ---
+        // Forced padding to prevent the "broken" look on subdomains like /earn
         let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
         document.getElementsByTagName('head')[0].appendChild(meta);
         
-        // Kill any white backgrounds before they flash
-        document.documentElement.style.backgroundColor = '#000000';
-        document.body.style.backgroundColor = '#000000';
+        var style = document.createElement('style');
+        style.innerHTML = `
+            html, body { 
+                background-color: #000000 !important; 
+                margin-top: 0 !important; 
+                padding-top: 0 !important;
+            }
+            /* Ensures subdomain headers don't overlap our title bar */
+            header, .navbar, .fixed-top { position: relative !important; top: 0 !important; }
+        `;
+        document.head.appendChild(style);
         """
-        let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         config.userContentController.addUserScript(userScript)
         
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
@@ -49,7 +56,7 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // --- FIX: LAYOUT & SCROLLING ---
+        // --- FIX: LAYOUT BEHAVIOR ---
         webView.scrollView.contentInsetAdjustmentBehavior = .never 
         webView.scrollView.bounces = true 
         webView.isOpaque = false
@@ -92,7 +99,7 @@ struct WebView: UIViewRepresentable {
             return nil
         }
         
-        // --- LOADING STATE MANAGEMENT ---
+        // --- FIX: TRACK LOADING STATE ---
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             DispatchQueue.main.async { self.parent.isLoading = true }
         }
@@ -103,11 +110,11 @@ struct WebView: UIViewRepresentable {
             PluginManager.shared.webViewDidFinishLoad(url: webView.url ?? parent.url)
             DispatchQueue.main.async { self.parent.isLoading = false }
         }
-        
-        func webView(_ web_view: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             DispatchQueue.main.async { self.parent.isLoading = false }
         }
-
+        
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             PluginManager.shared.handleScriptMessage(message: message)
         }
@@ -116,7 +123,6 @@ struct WebView: UIViewRepresentable {
             webViewInstance?.reload()
         }
 
-        // --- FILE PICKER (PRESERVED) ---
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
             self.filePickerCompletionHandler = completionHandler
             let alert = UIAlertController(title: "Upload File", message: nil, preferredStyle: .actionSheet)
@@ -130,7 +136,9 @@ struct WebView: UIViewRepresentable {
                     self.getTopVC()?.present(picker, animated: true)
                 }
             })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in 
+                completionHandler(nil) 
+            })
             getTopVC()?.present(alert, animated: true)
         }
 
@@ -141,51 +149,66 @@ struct WebView: UIViewRepresentable {
                 return
             }
             if provider.hasItemConformingToTypeIdentifier(UTType.item.identifier) {
-                provider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, _ in
+                provider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, error in
                     if let url = url {
                         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                        try? FileManager.default.removeItem(at: tempURL)
                         try? FileManager.default.copyItem(at: url, to: tempURL)
                         self.filePickerCompletionHandler?([tempURL])
-                    } else { self.filePickerCompletionHandler?(nil) }
+                    } else {
+                        self.filePickerCompletionHandler?(nil)
+                    }
                 }
-            } else { self.filePickerCompletionHandler?(nil) }
+            } else {
+                self.filePickerCompletionHandler?(nil)
+            }
         }
 
         private func getTopVC() -> UIViewController? {
-            let keyWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }.first { $0.isKeyWindow }
-            var top = keyWindow?.rootViewController
-            while let presented = top?.presentedViewController { top = presented }
-            return top
+            let keyWindow = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }
+            var topController = keyWindow?.rootViewController
+            while let presented = topController?.presentedViewController {
+                topController = presented
+            }
+            return topController
         }
     }
 }
 
-// --- THE MODERN SURVEY CONTAINER ---
+// --- UPDATED: MODERN SURVEY CONTAINER ---
 struct SurveyContainerView: View {
     let url: URL
-    @State private var isLoading = true
+    @State private var isLoading = true // Fixed loading state
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
             // --- CUSTOM MODERN TITLE BAR ---
-            // This is fixed at the top and NEVER allows web content to overlap.
             ZStack {
-                Color(hex: "0A0A0A") // Deep black for the bar
+                Color(hex: "121212") // Dark mode background
                 
                 HStack {
                     Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Circle().fill(Color.white.opacity(0.12)))
+                        HStack(spacing: 5) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .bold))
+                            Text("Close")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(20)
                     }
                     
                     Spacer()
                     
                     Text("Survey")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundColor(.white)
                     
                     Spacer()
@@ -194,20 +217,22 @@ struct SurveyContainerView: View {
                         NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
                     }) {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.blue)
-                            .padding(10)
-                            .background(Circle().fill(Color.blue.opacity(0.15)))
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(Circle())
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.horizontal)
+                .padding(.top, 10) // Pushes content below notch
+                .padding(.bottom, 10)
             }
-            .frame(height: 60)
+            .background(Color(hex: "121212").ignoresSafeArea(edges: .top))
             
-            Divider().background(Color.white.opacity(0.1))
+            Divider().background(Color.white.opacity(0.2))
 
-            // --- SURVEY CONTENT + LOADING OVERLAY ---
+            // --- WEBVIEW WITH LOADING OVERLAY ---
             ZStack {
                 WebView(url: url, isLoading: $isLoading)
                     .background(Color.black)
@@ -224,7 +249,7 @@ struct SurveyContainerView: View {
     }
 }
 
-// Hex Helper (Preserved)
+// Helper for the hex color to match your app theme
 extension Color {
     init(hex: String) {
         let scanner = Scanner(string: hex)
