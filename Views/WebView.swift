@@ -24,7 +24,7 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // --- FIX: SUBDOMAIN & VIEWPORT LAYOUT ---
+        // --- BUG FIX: VIEWPORT CALIBRATION ---
         let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
@@ -37,10 +37,11 @@ struct WebView: UIViewRepresentable {
                 --sat: env(safe-area-inset-top);
                 --sab: env(safe-area-inset-bottom);
             }
+            /* We remove the padding-top here because SwiftUI's safeAreaInset now handles the spacing */
             body { 
-                /* Removed padding-top here because the SwiftUI Header handles it */
                 padding-bottom: var(--sab) !important;
                 -webkit-text-size-adjust: 100%;
+                background-color: black !important;
             }
         `;
         document.head.appendChild(style);
@@ -56,8 +57,9 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // --- FIX: SCROLLING & BACKGROUND ---
-        webView.scrollView.contentInsetAdjustmentBehavior = .always // Changed to always for better site compatibility
+        // --- BUG FIX: CONTENT INSETS ---
+        // Setting this to .automatic allows the WebView to respect the SwiftUI header height automatically
+        webView.scrollView.contentInsetAdjustmentBehavior = .automatic 
         webView.scrollView.bounces = true 
         webView.isOpaque = false
         webView.backgroundColor = .clear
@@ -181,49 +183,48 @@ struct SurveyContainerView: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        VStack(spacing: 0) {
-            // --- HEADER ---
-            HStack {
-                // Close Button
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.white.opacity(0.12)))
-                }
-                
-                Spacer()
-                
-                Text("Survey")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                // Refresh Button
-                Button(action: {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.blue)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.blue.opacity(0.12)))
+        WebView(url: url)
+            .background(Color.black)
+            .ignoresSafeArea(edges: .bottom)
+            .safeAreaInset(edge: .top) {
+                // --- MODERN TITLE BAR ---
+                VStack(spacing: 0) {
+                    HStack {
+                        // Close
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(Color.white.opacity(0.12)))
+                        }
+                        
+                        Spacer()
+                        
+                        Text("Survey")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        // Refresh
+                        Button(action: {
+                            NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.blue)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(Color.blue.opacity(0.12)))
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(Color(hex: "121212"))
+                    
+                    Divider().background(Color.white.opacity(0.1))
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
-            .padding(.top, 8) // Reduced top padding to let safe area handle it
-            .background(Color(hex: "121212"))
-
-            Divider().background(Color.white.opacity(0.1))
-
-            // --- WEB CONTENT ---
-            WebView(url: url)
-                .edgesIgnoringSafeArea(.bottom) // Allow site to fill bottom
-        }
-        .background(Color(hex: "121212").ignoresSafeArea())
     }
 }
 
