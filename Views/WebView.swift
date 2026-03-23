@@ -15,6 +15,7 @@ class LeakFreeScriptHandler: NSObject, WKScriptMessageHandler {
 // --- WEBVIEW IMPLEMENTATION ---
 struct WebView: UIViewRepresentable {
     let url: URL
+    @Binding var isLoading: Bool // Track loading state for the custom UI
     @Environment(\.dismiss) var dismiss
 
     func makeCoordinator() -> Coordinator {
@@ -24,34 +25,20 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // --- FIX: SUBDOMAIN & VIEWPORT LAYOUT ---
-        // This script fixes scaling and prevents subdomains from "breaking" by 
-        // ensuring the safe-area-insets are respected across all pages.
+        // --- THE "ANTI-BROKEN" FIX ---
+        // We remove 'viewport-fit=cover' to prevent the site from trying to crawl under the notch.
+        // We also force the background to black immediately.
         let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
-        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
         document.getElementsByTagName('head')[0].appendChild(meta);
         
-        var style = document.createElement('style');
-        style.innerHTML = `
-            :root {
-                --sat: env(safe-area-inset-top);
-                --sab: env(safe-area-inset-bottom);
-            }
-            body { 
-                padding-top: var(--sat) !important; 
-                padding-bottom: var(--sab) !important;
-                -webkit-text-size-adjust: 100%;
-            }
-            /* Fix for subdomains like /earn that might have fixed headers */
-            header, .navbar, .fixed-top { 
-                margin-top: var(--sat) !important; 
-            }
-        `;
-        document.head.appendChild(style);
+        // Kill any white backgrounds before they flash
+        document.documentElement.style.backgroundColor = '#000000';
+        document.body.style.backgroundColor = '#000000';
         """
-        let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         config.userContentController.addUserScript(userScript)
         
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
@@ -62,11 +49,11 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // --- FIX: SCROLLING & BACKGROUND ---
+        // --- FIX: LAYOUT & SCROLLING ---
         webView.scrollView.contentInsetAdjustmentBehavior = .never 
         webView.scrollView.bounces = true 
         webView.isOpaque = false
-        webView.backgroundColor = .clear
+        webView.backgroundColor = .black
         
         PluginManager.shared.initializePlugins(context: SWVContext.shared, webView: webView)
         
@@ -105,19 +92,22 @@ struct WebView: UIViewRepresentable {
             return nil
         }
         
-        @MainActor
-        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @Sendable (URL?) -> Void) {
-            let tempDir = FileManager.default.temporaryDirectory
-            let destinationURL = tempDir.appendingPathComponent(suggestedFilename)
-            completionHandler(destinationURL)
+        // --- LOADING STATE MANAGEMENT ---
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            DispatchQueue.main.async { self.parent.isLoading = true }
         }
-        
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             self.webViewInstance = webView
             webView.scrollView.refreshControl?.endRefreshing()
             PluginManager.shared.webViewDidFinishLoad(url: webView.url ?? parent.url)
+            DispatchQueue.main.async { self.parent.isLoading = false }
         }
         
+        func webView(_ web_view: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            DispatchQueue.main.async { self.parent.isLoading = false }
+        }
+
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             PluginManager.shared.handleScriptMessage(message: message)
         }
@@ -126,6 +116,7 @@ struct WebView: UIViewRepresentable {
             webViewInstance?.reload()
         }
 
+        // --- FILE PICKER (PRESERVED) ---
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
             self.filePickerCompletionHandler = completionHandler
             let alert = UIAlertController(title: "Upload File", message: nil, preferredStyle: .actionSheet)
@@ -139,9 +130,7 @@ struct WebView: UIViewRepresentable {
                     self.getTopVC()?.present(picker, animated: true)
                 }
             })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in 
-                completionHandler(nil) 
-            })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
             getTopVC()?.present(alert, animated: true)
         }
 
@@ -152,91 +141,90 @@ struct WebView: UIViewRepresentable {
                 return
             }
             if provider.hasItemConformingToTypeIdentifier(UTType.item.identifier) {
-                provider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, error in
+                provider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, _ in
                     if let url = url {
                         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                        try? FileManager.default.removeItem(at: tempURL)
                         try? FileManager.default.copyItem(at: url, to: tempURL)
                         self.filePickerCompletionHandler?([tempURL])
-                    } else {
-                        self.filePickerCompletionHandler?(nil)
-                    }
+                    } else { self.filePickerCompletionHandler?(nil) }
                 }
-            } else {
-                self.filePickerCompletionHandler?(nil)
-            }
+            } else { self.filePickerCompletionHandler?(nil) }
         }
 
         private func getTopVC() -> UIViewController? {
-            let keyWindow = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-                .first { $0.isKeyWindow }
-            var topController = keyWindow?.rootViewController
-            while let presented = topController?.presentedViewController {
-                topController = presented
-            }
-            return topController
+            let keyWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }.first { $0.isKeyWindow }
+            var top = keyWindow?.rootViewController
+            while let presented = top?.presentedViewController { top = presented }
+            return top
         }
     }
 }
 
-// --- UPDATED: MODERN SURVEY CONTAINER ---
+// --- THE MODERN SURVEY CONTAINER ---
 struct SurveyContainerView: View {
     let url: URL
+    @State private var isLoading = true
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
             // --- CUSTOM MODERN TITLE BAR ---
+            // This is fixed at the top and NEVER allows web content to overlap.
             ZStack {
-                Color(hex: "121212") 
+                Color(hex: "0A0A0A") // Deep black for the bar
                 
                 HStack {
-                    // Modern Close Button
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.white)
                             .padding(10)
-                            .background(Circle().fill(Color.white.opacity(0.15)))
+                            .background(Circle().fill(Color.white.opacity(0.12)))
                     }
                     
                     Spacer()
                     
                     Text("Survey")
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     
                     Spacer()
                     
-                    // Modern Refresh Button
                     Button(action: {
                         NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
                     }) {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.blue)
                             .padding(10)
                             .background(Circle().fill(Color.blue.opacity(0.15)))
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
-            .frame(height: 70)
+            .frame(height: 60)
             
             Divider().background(Color.white.opacity(0.1))
 
-            // --- SURVEY CONTENT ---
-            WebView(url: url)
-                .background(Color.black)
+            // --- SURVEY CONTENT + LOADING OVERLAY ---
+            ZStack {
+                WebView(url: url, isLoading: $isLoading)
+                    .background(Color.black)
+                
+                if isLoading {
+                    Color.black.ignoresSafeArea()
+                    ProgressView()
+                        .tint(.blue)
+                        .scaleEffect(1.5)
+                }
+            }
         }
         .background(Color.black.ignoresSafeArea())
     }
 }
 
-// Helper for Hex Colors
+// Hex Helper (Preserved)
 extension Color {
     init(hex: String) {
         let scanner = Scanner(string: hex)
