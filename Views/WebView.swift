@@ -24,20 +24,25 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // --- BUG FIX: VIEWPORT CALIBRATION ---
+        // --- BUG FIX: VIEWPORT & POPUP BLOCKER ---
         let viewportScript = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
         document.getElementsByTagName('head')[0].appendChild(meta);
         
+        // Overriding window.open to stop redirecting to Safari
+        window.open = function(url) {
+            window.location.href = url;
+            return null;
+        };
+
         var style = document.createElement('style');
         style.innerHTML = `
             :root {
                 --sat: env(safe-area-inset-top);
                 --sab: env(safe-area-inset-bottom);
             }
-            /* We remove the padding-top here because SwiftUI's safeAreaInset now handles the spacing */
             body { 
                 padding-bottom: var(--sab) !important;
                 -webkit-text-size-adjust: 100%;
@@ -46,19 +51,21 @@ struct WebView: UIViewRepresentable {
         `;
         document.head.appendChild(style);
         """
-        let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        // Injected at START to catch popups before they trigger
+        let userScript = WKUserScript(source: viewportScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         config.userContentController.addUserScript(userScript)
         
         let leakFreeHandler = LeakFreeScriptHandler(delegate: context.coordinator)
         config.userContentController.add(leakFreeHandler, name: "nativeApp")
+        
+        // Settings for Movie Streaming
         config.allowsInlineMediaPlayback = true
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
         
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // --- BUG FIX: CONTENT INSETS ---
-        // Setting this to .automatic allows the WebView to respect the SwiftUI header height automatically
         webView.scrollView.contentInsetAdjustmentBehavior = .automatic 
         webView.scrollView.bounces = true 
         webView.isOpaque = false
@@ -94,7 +101,9 @@ struct WebView: UIViewRepresentable {
             webViewInstance?.reload()
         }
 
+        // --- CRITICAL FIX: STOP SAFARI REDIRECTS ---
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            // If a movie site tries to open a new tab/window, force it to stay in the app
             if navigationAction.targetFrame == nil {
                 webView.load(navigationAction.request)
             }
@@ -177,7 +186,7 @@ struct WebView: UIViewRepresentable {
     }
 }
 
-// --- UPDATED: MODERN SURVEY CONTAINER ---
+// --- UPDATED: BOREDFLIX CONTAINER ---
 struct SurveyContainerView: View {
     let url: URL
     @Environment(\.dismiss) var dismiss
@@ -187,10 +196,8 @@ struct SurveyContainerView: View {
             .background(Color.black)
             .ignoresSafeArea(edges: .bottom)
             .safeAreaInset(edge: .top) {
-                // --- MODERN TITLE BAR ---
                 VStack(spacing: 0) {
                     HStack {
-                        // Close
                         Button(action: { dismiss() }) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 15, weight: .bold))
@@ -201,13 +208,12 @@ struct SurveyContainerView: View {
                         
                         Spacer()
                         
-                        Text("Survey")
+                        Text("BOREDFLIX")
                             .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(.red)
                         
                         Spacer()
                         
-                        // Refresh
                         Button(action: {
                             NotificationCenter.default.post(name: NSNotification.Name("ReloadWebView"), object: nil)
                         }) {
@@ -220,9 +226,9 @@ struct SurveyContainerView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
-                    .background(Color(hex: "121212"))
+                    .background(Color.black)
                     
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(Color.red.opacity(0.3))
                 }
             }
     }
