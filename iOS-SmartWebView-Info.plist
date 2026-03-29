@@ -3,16 +3,32 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>BloxTime</string>
+	<string>Boredflix</string>
 	<key>CFBundleName</key>
-	<string>BloxTime</string>
+	<string>Boredflix</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
-	<key>XSAppIconAssets</key>
-	<string>Assets.xcassets/AppIcon.appiconset</string>
+    
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/> <key>NSExceptionDomains</key>
+		<dict>
+			<key>boredflix.com</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/> </dict>
+		</dict>
+	</dict>
+
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>audio</string>
 	</array>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
 </dict>
 </plist>
