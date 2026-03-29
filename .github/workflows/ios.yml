@@ -21,22 +21,15 @@ jobs:
           SCHEME_NAME=$(xcodebuild -list -json | jq -r '.project.schemes[0]')
           echo "SCHEME=$SCHEME_NAME" >> $GITHUB_ENV
 
-      # --- NEW STEP: APPLY APP NAME & ICONS ---
+      # --- APPLY APP NAME & ICONS ---
       - name: Configure App Identity
         run: |
-          # 1. Find the correct Info.plist
           PLIST_PATH=$(find . -name "Info.plist" | head -n 1)
           echo "Updating Identity in: $PLIST_PATH"
-          
-          # 2. Force App Name to Boredflix
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Boredflix" "$PLIST_PATH" || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Boredflix" "$PLIST_PATH"
           /usr/libexec/PlistBuddy -c "Set :CFBundleName Boredflix" "$PLIST_PATH" || /usr/libexec/PlistBuddy -c "Add :CFBundleName string Boredflix" "$PLIST_PATH"
-          
-          # 3. Ensure Icon Path is Set (Matches your Plist XML)
           /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$PLIST_PATH" || /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$PLIST_PATH"
           /usr/libexec/PlistBuddy -c "Set :XSAppIconAssets Assets.xcassets/AppIcon.appiconset" "$PLIST_PATH" || /usr/libexec/PlistBuddy -c "Add :XSAppIconAssets string Assets.xcassets/AppIcon.appiconset" "$PLIST_PATH"
-
-          # 4. Inject Popup Protection & Security
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST_PATH" || true
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool false" "$PLIST_PATH" || /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads false" "$PLIST_PATH"
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains dict" "$PLIST_PATH" || true
@@ -72,13 +65,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon # Force icon compilation
+            ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon 
 
       - name: Export IPA
         run: |
           mkdir -p $GITHUB_WORKSPACE/build/output
           
-          # Try formal export, but if it fails (Exit 70), manually package the IPA
           xcodebuild -exportArchive \
             -archivePath $GITHUB_WORKSPACE/build/App.xcarchive \
             -exportOptionsPlist ExportOptions.plist \
@@ -88,11 +80,13 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES || \
           (
-            echo "Standard export failed due to Team ID requirements. Forcing manual IPA packaging..."
+            echo "Standard export failed. Forcing manual IPA packaging..."
             mkdir -p $GITHUB_WORKSPACE/build/output/Payload
             cp -r $GITHUB_WORKSPACE/build/App.xcarchive/Products/Applications/*.app $GITHUB_WORKSPACE/build/output/Payload/
             cd $GITHUB_WORKSPACE/build/output
-            zip -r Boredflix.ipa Payload
+            zip -vr Boredflix.ipa Payload
+            # --- CRITICAL FIX: CLEANUP ---
+            rm -rf Payload # Remove the folder so GitHub only uploads the .ipa file
             echo "Manual IPA created successfully."
           )
             
@@ -100,4 +94,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Boredflix-IPA
-          path: build/output/*.ipa
+          # FIX: We point to the specific file to prevent GitHub from double-zipping it
+          path: build/output/Boredflix.ipa
